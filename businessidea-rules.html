@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explore — EPIC Source Detection</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(145deg, #f5ede0 0%, #efe3cd 55%, #e6d0a9 100%);
+            margin: 0;
+            color: #2f2218;
+        }
+        header {
+            background: linear-gradient(130deg, #3d2b1f 0%, #6a4524 100%);
+            color: #fff;
+            padding: 2.2rem 1.2rem 1.4rem;
+            text-align: center;
+        }
+        header h1 {
+            margin: 0;
+            color: #f7d27d;
+            font-size: 2em;
+            letter-spacing: -0.3px;
+        }
+        header p {
+            margin: 0.65rem auto 0;
+            max-width: 860px;
+            color: #e6cfaa;
+            line-height: 1.65;
+            font-size: 1.02em;
+        }
+        .back-link {
+            display: inline-block;
+            margin: 1.2rem 0 0 1.2rem;
+            background: rgba(184,127,42,0.14);
+            color: #6f4b0f;
+            text-decoration: none;
+            border-radius: 999px;
+            border: 1px solid rgba(184,127,42,0.35);
+            padding: 0.42em 0.95em;
+            font-size: 0.88em;
+            font-weight: 700;
+        }
+        .wrap {
+            max-width: 980px;
+            margin: 1.2rem auto 2.4rem;
+            padding: 0 1.2rem;
+        }
+        .panel {
+            background: #fffdf8;
+            border-radius: 1rem;
+            box-shadow: 0 8px 26px rgba(61, 43, 31, 0.12);
+            border-top: 5px solid #c8a84b;
+            padding: 1.25rem 1.35rem;
+            margin-bottom: 1rem;
+        }
+        .panel h2 {
+            margin: 0 0 0.6rem;
+            font-size: 1.16em;
+            color: #3d2b1f;
+        }
+        .panel h3 {
+            margin: 0.9rem 0 0.4rem;
+            font-size: 1.02em;
+            color: #5c3a1e;
+        }
+        .panel p, .panel li {
+            color: #4b3a2c;
+            line-height: 1.7;
+            font-size: 0.96em;
+        }
+        .panel ul, .panel ol {
+            margin: 0.4rem 0 0.6rem 1.2rem;
+            padding: 0;
+        }
+        .panel li {
+            margin-bottom: 0.35em;
+        }
+        pre {
+            margin: 0.4rem 0 0;
+            background: #2a1d13;
+            color: #f9f0df;
+            border-radius: 0.7rem;
+            padding: 0.95rem 1rem;
+            overflow-x: auto;
+            font-size: 0.88em;
+            line-height: 1.55;
+        }
+        code { font-family: Consolas, 'Courier New', monospace; }
+        .inline-code {
+            background: #f3ead8;
+            border: 1px solid #dbc8a4;
+            border-radius: 0.3em;
+            padding: 0.12em 0.45em;
+            font-size: 0.9em;
+            font-family: Consolas, 'Courier New', monospace;
+        }
+        .kpi {
+            display: grid;
+            gap: 0.65rem;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            margin-top: 0.4rem;
+        }
+        .kpi .item {
+            background: #fff7de;
+            border: 1px solid #e9ca82;
+            border-radius: 0.7rem;
+            padding: 0.72rem 0.8rem;
+        }
+        .kpi .label {
+            font-size: 0.76em;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: #815b1d;
+            font-weight: 700;
+        }
+        .kpi .value {
+            margin-top: 0.3rem;
+            font-size: 0.89em;
+            color: #433224;
+        }
+        .note {
+            margin-top: 0.7rem;
+            background: #fef3d0;
+            border-left: 4px solid #c8a84b;
+            border-radius: 0.5rem;
+            padding: 0.62rem 0.8rem;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88em;
+            margin-top: 0.5rem;
+        }
+        th, td {
+            border: 1px solid #e6d9c4;
+            padding: 0.55em 0.7em;
+            text-align: left;
+        }
+        th {
+            background: #f9f1e2;
+            font-weight: 700;
+            color: #3d2b1f;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td { color: #4b3a2c; }
+        .tag-epic {
+            display: inline-block;
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .tag-not-epic {
+            display: inline-block;
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .tag-not-sure {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .workflow-step {
+            display: flex;
+            gap: 0.8rem;
+            align-items: flex-start;
+            margin-bottom: 0.7rem;
+        }
+        .step-num {
+            flex-shrink: 0;
+            width: 1.7rem;
+            height: 1.7rem;
+            background: #5c3a1e;
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.82em;
+        }
+        .step-content {
+            flex: 1;
+        }
+        .step-content strong {
+            color: #3d2b1f;
+        }
+        .footer {
+            text-align: center;
+            color: #b09060;
+            margin: 2rem 0 1rem 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>EPIC Source Detection Explore</h1>
+    <p>Classify each data source contributing CCDs as "EPIC", "Not-EPIC", or "NOT SURE" using structural
+       fingerprints from just 100 documents per source over a 1-week window. This supports a service where
+       we deliver data from non-EPIC sources to EPIC hospitals.</p>
+</header>
+
+<a class="back-link" href="explore.html">&#8592; Back to Explore</a>
+
+<div class="wrap">
+
+    <!-- Question -->
+    <section class="panel">
+        <h2>Question</h2>
+        <p>
+            We deliver clinical data from <strong>non-EPIC sources to EPIC hospitals</strong>. To understand
+            what we're working with, we need to tag every contributing source as
+            <span class="tag-epic">EPIC</span>,
+            <span class="tag-not-epic">Not-EPIC</span>, or
+            <span class="tag-not-sure">NOT SURE</span> —
+            using only the CCD content itself (no vendor contracts or external metadata).
+        </p>
+        <p>
+            <strong>Constraint:</strong> Use only 100 CCDs per Assigning Authority, sampled from a single
+            recent 7-day window.
+        </p>
+    </section>
+
+    <!-- Why This Matters -->
+    <section class="panel">
+        <h2>Why This Matters</h2>
+        <ul>
+            <li><strong>Routing logic:</strong> If a source is already EPIC, its data may be redundant for EPIC
+                destination hospitals — or may need different deduplication handling.</li>
+            <li><strong>Transformation rules:</strong> EPIC CCDs have known structural patterns that can be
+                exploited for faster, more reliable parsing. Non-EPIC sources need broader tolerance.</li>
+            <li><strong>Quality baselines:</strong> Knowing vendor lineage lets you benchmark data quality
+                expectations per source without relying on incomplete metadata.</li>
+            <li><strong>Contract validation:</strong> Cross-reference the data-derived classification against
+                what vendors claim — discrepancies flag configuration issues or gateway artifacts.</li>
+        </ul>
+    </section>
+
+    <!-- Fingerprint Signals -->
+    <section class="panel">
+        <h2>Fingerprint Signals in the CCD</h2>
+        <p>EPIC-originated CCDs carry distinctive structural signatures that differentiate them from Cerner,
+           MEDITECH, Allscripts, eClinicalWorks, and other systems. The key signals:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Signal</th>
+                    <th>Where in CCD</th>
+                    <th>EPIC Indicator</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Root templateId OIDs</td>
+                    <td><code class="inline-code">ClinicalDocument/templateId</code></td>
+                    <td>EPIC uses specific OID combinations for CCD, CCD-A, and referral documents</td>
+                </tr>
+                <tr>
+                    <td>Custodian / Author software</td>
+                    <td><code class="inline-code">assignedAuthoringDevice/softwareName</code> or <code class="inline-code">custodian/assignedCustodian</code></td>
+                    <td>Often contains "Epic" or "EpicCare" in the software name field</td>
+                </tr>
+                <tr>
+                    <td>Section ordering</td>
+                    <td>Order of <code class="inline-code">component/section</code> elements</td>
+                    <td>EPIC follows a predictable section sequence (allergies → meds → problems → results…)</td>
+                </tr>
+                <tr>
+                    <td>Extension namespace patterns</td>
+                    <td><code class="inline-code">id/@root</code> OIDs across entries</td>
+                    <td>EPIC-internal OID patterns (e.g., 1.2.840.114350.x.x.x family)</td>
+                </tr>
+                <tr>
+                    <td>Entry formatting style</td>
+                    <td>Whitespace, attribute ordering in observations</td>
+                    <td>EPIC serializers produce consistent indentation and attribute order</td>
+                </tr>
+                <tr>
+                    <td>Participant / performer patterns</td>
+                    <td><code class="inline-code">performer/assignedEntity</code></td>
+                    <td>EPIC encodes provider NPI and org hierarchy in a distinctive nested pattern</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            <strong>Important:</strong> No single signal is definitive. The classification uses a <em>weighted score</em>
+            across all signals. A source scoring high on 4+ signals is tagged EPIC with high confidence; a source
+            with only 1-2 weak matches goes to NOT SURE.
+        </div>
+    </section>
+
+    <!-- Sampling Strategy -->
+    <section class="panel">
+        <h2>Sampling Strategy</h2>
+        <div class="kpi">
+            <div class="item">
+                <div class="label">Documents per Source</div>
+                <div class="value">100 CCDs (randomly sampled)</div>
+            </div>
+            <div class="item">
+                <div class="label">Time Window</div>
+                <div class="value">7 consecutive days (recent)</div>
+            </div>
+            <div class="item">
+                <div class="label">Grouping Key</div>
+                <div class="value">Assigning Authority (source system)</div>
+            </div>
+            <div class="item">
+                <div class="label">Minimum for Classification</div>
+                <div class="value">At least 80 of 100 docs must agree</div>
+            </div>
+        </div>
+        <p style="margin-top: 0.8rem;">
+            100 documents is sufficient because EPIC's structural patterns are generated by the <em>software</em>,
+            not the clinical content. If a source is running EPIC, virtually every CCD it produces carries the
+            same fingerprints regardless of which patient or encounter it describes.
+        </p>
+    </section>
+
+    <!-- Workflow -->
+    <section class="panel">
+        <h2>Workflow</h2>
+
+        <div class="workflow-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <strong>List all Assigning Authorities</strong> — pull distinct source identifiers from the
+                FHIR Document Reference index or S3 inventory for the target week.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <strong>Sample 100 CCDs per source</strong> — randomly select from documents received in
+                the 7-day window. If a source contributed fewer than 100 docs that week, use all available
+                and note reduced confidence.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <strong>Extract fingerprints</strong> — for each CCD, parse the XML and collect: root templateId
+                OIDs, software name strings, section LOINC codes in order, OID families used in entry IDs,
+                and namespace patterns.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+                <strong>Score against profiles</strong> — compare each document's fingerprints to a known EPIC
+                reference profile (and optionally known Cerner / MEDITECH profiles). Each document gets an
+                EPIC confidence score (0–100).
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+                <strong>Classify the source</strong> — aggregate scores across the 100 documents:
+                <ul style="margin-top: 0.3em;">
+                    <li>≥80 docs score above EPIC threshold → <span class="tag-epic">EPIC</span></li>
+                    <li>≥80 docs score below EPIC threshold AND match a non-EPIC profile → <span class="tag-not-epic">Not-EPIC</span></li>
+                    <li>Otherwise → <span class="tag-not-sure">NOT SURE</span></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">6</div>
+            <div class="step-content">
+                <strong>Output a classification table</strong> — one row per Assigning Authority with the tag,
+                confidence score, sample size, and the top contributing signal.
+            </div>
+        </div>
+    </section>
+
+    <!-- Example Output -->
+    <section class="panel">
+        <h2>Example Output</h2>
+        <p>The script produces a JSON report and a summary table:</p>
+        <pre><code>{
+  "run_date": "2026-06-28",
+  "window_start": "2026-06-21",
+  "window_end": "2026-06-27",
+  "sources_evaluated": 47,
+  "classifications": [
+    {
+      "assigning_authority": "1.2.840.114350.1.13.297.2.7.8.688883",
+      "display_name": "Strong Memorial Hospital",
+      "docs_sampled": 100,
+      "epic_score_mean": 94.2,
+      "classification": "EPIC",
+      "top_signal": "softwareName='Epic - Version 2022'",
+      "confidence": "HIGH"
+    },
+    {
+      "assigning_authority": "2.16.840.1.113883.3.117.1.1.5.1.1",
+      "display_name": "Montefiore Medical Center",
+      "docs_sampled": 100,
+      "epic_score_mean": 12.1,
+      "classification": "Not-EPIC",
+      "top_signal": "templateId matches Cerner Millennium pattern",
+      "confidence": "HIGH"
+    },
+    {
+      "assigning_authority": "2.16.840.1.113883.3.4295",
+      "display_name": "Small Community Health Center",
+      "docs_sampled": 38,
+      "epic_score_mean": 55.7,
+      "classification": "NOT SURE",
+      "top_signal": "mixed signals — some EPIC OIDs but non-EPIC section order",
+      "confidence": "LOW (under 100 docs)"
+    }
+  ],
+  "summary": {
+    "epic_count": 22,
+    "not_epic_count": 19,
+    "not_sure_count": 6
+  }
+}</code></pre>
+    </section>
+
+    <!-- Known EPIC Signatures -->
+    <section class="panel">
+        <h2>Known EPIC Signature Reference</h2>
+        <p>These patterns are consistent across EPIC deployments seen in NY SHIN-NY feeds:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Signal</th>
+                    <th>Pattern</th>
+                    <th>Weight</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Software name</td>
+                    <td>Contains "Epic" (case-insensitive) in <code class="inline-code">softwareName</code> or <code class="inline-code">manufacturerModelName</code></td>
+                    <td>High (0.35)</td>
+                </tr>
+                <tr>
+                    <td>OID family</td>
+                    <td>Root IDs starting with <code class="inline-code">1.2.840.114350</code></td>
+                    <td>High (0.30)</td>
+                </tr>
+                <tr>
+                    <td>Section order</td>
+                    <td>Allergies → Medications → Problems → Results → Vital Signs → Procedures</td>
+                    <td>Medium (0.15)</td>
+                </tr>
+                <tr>
+                    <td>templateId set</td>
+                    <td>Includes <code class="inline-code">2.16.840.1.113883.10.20.22.1.2</code> (CCD) with EPIC-specific companion templates</td>
+                    <td>Medium (0.10)</td>
+                </tr>
+                <tr>
+                    <td>Formatting style</td>
+                    <td>Consistent 2-space indentation, attributes alphabetically ordered</td>
+                    <td>Low (0.10)</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="note">
+            These weights are starting points. After initial classification, validate against known ground truth
+            (sources where you <em>know</em> the vendor) and adjust weights accordingly.
+        </div>
+    </section>
+
+    <!-- Edge Cases -->
+    <section class="panel">
+        <h2>Edge Cases &amp; NOT SURE Scenarios</h2>
+        <ul>
+            <li><strong>HIE gateways:</strong> Some sources route through an HIE that rewrites headers. The
+                CCD may lose its original software name while retaining internal OID patterns — producing mixed signals.</li>
+            <li><strong>Epic Community Connect:</strong> Smaller practices on a host hospital's EPIC instance
+                may use the host's OIDs but with slightly different templates. These usually still classify as EPIC.</li>
+            <li><strong>Recent migrations:</strong> A source that recently switched from Cerner to EPIC may
+                have a mix of old and new documents in the same week. The 80/100 threshold catches this as NOT SURE.</li>
+            <li><strong>White-label / interface engines:</strong> Some organizations use Rhapsody or Mirth to
+                transform outbound CCDs, stripping original vendor markers. These are genuinely ambiguous.</li>
+        </ul>
+    </section>
+
+    <!-- Run It -->
+    <section class="panel">
+        <h2>Run It</h2>
+        <p>Use the exploration utility against a set of sampled CCDs (from S3 or local export):</p>
+        <pre><code>python Utilities/explore_epic_source_detection.py \
+  --s3-bucket your-raw-bucket \
+  --prefix ccds/ \
+  --window-days 7 \
+  --docs-per-source 100 \
+  --output epic_classification_report.json</code></pre>
+        <p style="margin-top: 0.6rem;">Or against a local directory of pre-downloaded samples:</p>
+        <pre><code>python Utilities/explore_epic_source_detection.py \
+  --local-dir ./sampled_ccds/ \
+  --docs-per-source 100 \
+  --output epic_classification_report.json</code></pre>
+    </section>
+
+    <!-- Interpreting Results -->
+    <section class="panel">
+        <h2>Interpreting Results</h2>
+        <div class="kpi">
+            <div class="item">
+                <div class="label"><span class="tag-epic">EPIC</span></div>
+                <div class="value">Source is almost certainly running Epic EHR. Data destined for EPIC hospitals
+                    may already exist there — check for deduplication needs.</div>
+            </div>
+            <div class="item">
+                <div class="label"><span class="tag-not-epic">Not-EPIC</span></div>
+                <div class="value">Source runs a different EHR (Cerner, MEDITECH, Allscripts, etc.). This is the
+                    data we're primarily delivering to EPIC hospitals — highest value for the service.</div>
+            </div>
+            <div class="item">
+                <div class="label"><span class="tag-not-sure">NOT SURE</span></div>
+                <div class="value">Ambiguous signals. May need manual investigation, a larger sample, or
+                    cross-referencing with provider directories to resolve.</div>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 Medallion Architecture — Data Processing Demo
+</div>
+
+</body>
+</html>
