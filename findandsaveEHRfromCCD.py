@@ -163,8 +163,8 @@ OUTPUT_CSV = os.path.join(
 
 OUTPUT_FIELDS = [
     # File location info
-    "Path",                           # S3 directory path
-    "FileName",                       # Just the filename
+    "Path",                           # Full S3 path (s3://bucket/key) - so you know what's done
+    "FileName",                       # Just the filename (for quick scanning)
     
     # Source identification
     "Assigning-Authority",            # Who sent this document (source system ID)
@@ -217,6 +217,48 @@ EPIC_OID_FAMILY = "1.2.840.114350"
 
 # XML namespace used in all CDA documents
 CDA_NAMESPACE = "urn:hl7-org:v3"
+
+
+# ============================================================================
+# HELPER: Restart Support (Skip Already-Processed Files)
+# ============================================================================
+
+def load_already_processed_paths(output_csv_path):
+    """
+    Read the existing output CSV and return a set of S3 paths that have
+    already been processed.
+    
+    This enables restart behavior: if the script crashes or is interrupted,
+    you can re-run it and it will skip files that already have results.
+    
+    Args:
+        output_csv_path (str): Path to the output CSV file
+    
+    Returns:
+        set: A set of full S3 paths (e.g., "s3://bucket/key") that are
+             already in the output. Returns empty set if file doesn't exist.
+    """
+    already_done = set()
+    
+    # If the output CSV doesn't exist yet, nothing has been processed
+    if not os.path.exists(output_csv_path):
+        return already_done
+    
+    try:
+        with open(output_csv_path, "r", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                path = row.get("Path", "").strip()
+                if path:
+                    already_done.add(path)
+    except Exception as e:
+        # If we can't read the file, assume nothing is done
+        # (safer to re-process than to skip)
+        print(f"  [WARNING] Could not read existing output CSV: {e}")
+        print(f"            Will process all files from scratch.")
+        return set()
+    
+    return already_done
 
 
 # ============================================================================
@@ -807,10 +849,49 @@ def main():
         return
 
     # =========================================================================
-    # STEP 2: Connect to S3
+    # STEP 2: Check for already-processed files (restart support)
     # =========================================================================
     
-    print("STEP 2: Connecting to S3...")
+    print("STEP 2: Checking for previously processed files (restart support)...")
+    already_processed = load_already_processed_paths(OUTPUT_CSV)
+    
+    if already_processed:
+        print(f"  [OK] Found {len(already_processed)} files already in output CSV")
+        
+        # Filter out files we've already done
+        remaining_keys = [
+            key for key in xml_keys
+            if f"s3://{BUCKET}/{key}" not in already_processed
+        ]
+        
+        skipped_count = len(xml_keys) - len(remaining_keys)
+        print(f"       Skipping {skipped_count} already-processed files")
+        print(f"       {len(remaining_keys)} files remaining to process")
+        
+        xml_keys = remaining_keys
+    else:
+        print("  [OK] No existing output found -- starting fresh")
+    
+    print()
+
+    # Check if there's anything left to do
+    if not xml_keys:
+        print("All files have already been processed! Nothing to do.")
+        print()
+        print("DEBUG SUMMARY:")
+        print(f"  Previously processed:    {len(already_processed)}")
+        print(f"  Processed this run:      0")
+        print(f"  Total in output CSV:     {len(already_processed)}")
+        print()
+        print(f"  Output CSV: {OUTPUT_CSV}")
+        print()
+        return
+
+    # =========================================================================
+    # STEP 3: Connect to S3
+    # =========================================================================
+    
+    print("STEP 3: Connecting to S3...")
     print(f"  AWS Profile: {AWS_PROFILE}")
     print(f"  Bucket:      {BUCKET}")
     
@@ -830,10 +911,10 @@ def main():
     print()
 
     # =========================================================================
-    # STEP 3: Process each CCD
+    # STEP 4: Process each CCD
     # =========================================================================
     
-    print("STEP 3: Processing documents...")
+    print("STEP 4: Processing documents...")
     print()
 
     results = []
@@ -854,7 +935,7 @@ def main():
             
             # Still write an error row to the output CSV
             error_row = {field: "(download error)" for field in OUTPUT_FIELDS}
-            error_row["Path"] = f"s3://{BUCKET}/{file_dir}/"
+            error_row["Path"] = f"s3://{BUCKET}/{s3_key}"
             error_row["FileName"] = file_name
             results.append(error_row)
             continue
@@ -867,13 +948,13 @@ def main():
             
             # Still write an error row to the output CSV
             error_row = {field: "(XML parse error)" for field in OUTPUT_FIELDS}
-            error_row["Path"] = f"s3://{BUCKET}/{file_dir}/"
+            error_row["Path"] = f"s3://{BUCKET}/{s3_key}"
             error_row["FileName"] = file_name
             results.append(error_row)
             continue
 
         # --- Add file path info ---
-        fingerprints["Path"] = f"s3://{BUCKET}/{file_dir}/"
+        fingerprints["Path"] = f"s3://{BUCKET}/{s3_key}"
         fingerprints["FileName"] = file_name
 
         # --- Print key signals (for manual review during execution) ---
@@ -891,20 +972,34 @@ def main():
         results.append(fingerprints)
 
     # =========================================================================
-    # STEP 4: Write output CSV
+    # STEP 5: Write output CSV (append to existing if restarting)
     # =========================================================================
     
     print()
-    print("STEP 4: Writing results to output CSV...")
+    print("STEP 5: Writing results to output CSV...")
     print(f"  File: {OUTPUT_CSV}")
     
     try:
-        with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as output_file:
-            writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS)
-            writer.writeheader()
-            writer.writerows(results)
+        # If the file already exists (restart scenario), append new rows
+        # If it doesn't exist, create it with a header row
+        file_exists = os.path.exists(OUTPUT_CSV) and os.path.getsize(OUTPUT_CSV) > 0
         
-        print(f"  [OK] Successfully wrote {len(results)} rows")
+        if file_exists and already_processed:
+            # APPEND mode: file already has a header and previous results
+            with open(OUTPUT_CSV, "a", newline="", encoding="utf-8") as output_file:
+                writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS)
+                writer.writerows(results)
+            
+            total_rows = len(already_processed) + len(results)
+            print(f"  [OK] Appended {len(results)} new rows (total now: {total_rows})")
+        else:
+            # FRESH mode: write header + all results
+            with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as output_file:
+                writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS)
+                writer.writeheader()
+                writer.writerows(results)
+            
+            print(f"  [OK] Wrote {len(results)} rows (fresh start)")
     except Exception as e:
         print(f"  [ERROR] Writing CSV: {e}")
         return
@@ -918,7 +1013,11 @@ def main():
     print("DONE!")
     print("=" * 75)
     print()
-    print(f"Processed {len(results)} CCD documents")
+    print("DEBUG SUMMARY:")
+    print(f"  Previously processed:    {len(already_processed)}")
+    print(f"  Processed this run:      {len(results)}")
+    print(f"  Total in output CSV:     {len(already_processed) + len(results)}")
+    print()
     print(f"Output saved to: {OUTPUT_CSV}")
     print()
     print("NEXT STEPS:")
