@@ -16,13 +16,47 @@ every CCD it produces will carry the same structural markers.
 ================================================================================
 STRATEGY
 ================================================================================
-1. Sample 100 CCDs per Assigning Authority from a single recent day
-2. Extract 7 structural signals from each CCD (see SIGNALS below)
-3. Write all raw signals to a CSV for downstream analysis
-4. Optionally make a preliminary EHR guess (EPIC / NOT-EPIC / NOT SURE)
+1. Read a list of CCD S3 paths from an input CSV
+2. Download the first 100KB of each CCD (header only — see OPTIMIZATION below)
+3. Extract structural signals using regex on the partial content
+4. Write all raw signals to an output CSV for downstream analysis
+5. Optionally make a preliminary EHR guess (EPIC / NOT-EPIC / NOT SURE)
 
-Note: We do NOT classify in this script. We extract facts. Classification
-logic can then be reviewed and adjusted by domain experts or in Excel.
+Note: We extract facts. Classification logic can then be reviewed and adjusted
+by domain experts in Excel or a separate script.
+
+
+================================================================================
+RESILIENCY / RESTART CAPABILITY
+================================================================================
+This script is designed to run over long periods (hours) against large datasets
+(100K+ documents). It WILL crash at some point — network timeouts, S3 throttling,
+or simply being interrupted. So we built in restart protection:
+
+HOW IT WORKS:
+  1. At startup, we read the  CSV containing results of evaluation 
+     and load all "Path" values into memory
+     as a set of already-processed files.
+  
+  2.  Now load in the CSV containing a list of candidate files.
+    This CSV has the list of CSV's you want to look at for this user story.
+
+  3. We skip any file in the input list that's already in that set.
+  3. Every 200 records, we write the results of the evaluation of the candidates
+     to disk by appending to CSV.
+  4. If the script crashes, you lose at most ~200 records of work.
+  5. On the next run, it picks up where it left off automatically.
+  6.  this is important for all future scripts.
+
+PERFORMANCE NOTE:
+  Loading 100K paths into a Python set uses ~12MB of RAM and takes ~1-2 seconds.
+  The set lookup is O(1) per file. This scales without issue.
+
+TO RE-PROCESS EVERYTHING FROM SCRATCH:
+  Delete the output CSV file (or rename it) and run again.
+
+TO RE-PROCESS SPECIFIC FILES:
+  Delete those rows from the output CSV and run again.
 
 
 ================================================================================
@@ -49,20 +83,26 @@ SIGNALS WE EXTRACT (from businessidea-rules.html)
    What:  OIDs declaring conformance to CDA standards (CCD, CCD-A, referral, etc.)
    Why:   Epic uses specific OID combinations; other vendors have different patterns
 
-5. Section Order (LOINC codes)
-   Where: Sequence of component/section elements in document body
-   What:  The order in which sections appear (Allergies → Medications → Problems…)
-   Why:   Epic follows a very predictable, distinctive section sequence
-
-6. OID Families
+5. OID Families
    Where: Every id/@root attribute (patient IDs, encounter IDs, entry IDs, etc.)
    What:  The OID prefixes used throughout the document
    Why:   Epic is assigned OID family 1.2.840.114350; other vendors use different roots
 
-7. Formatting Style
+6. Formatting Style
    Where: Whitespace, indentation, attribute ordering in the XML
    What:  Indentation pattern (2-space, 4-space, tabs, etc.)
    Why:   Epic's serializers produce consistent formatting; useful secondary signal
+
+
+================================================================================
+Optomization, for this use case: Partial Download (100KB Header Only)
+================================================================================
+We download ONLY the first 100KB of each CCD (S3 range request), not the full
+multi-MB file. All our signals live in the CDA header. This gives us ~100x less
+data transfer per file. See DOWNLOAD_BYTES constant below for details.
+
+If you ever need to look deeper into the document body, increase DOWNLOAD_BYTES
+or set it to None for full-file download.
 
 
 ================================================================================
@@ -77,12 +117,14 @@ INPUT CSV:
 
 OUTPUT CSV:
   - One row per input document
-  - Contains all 7 signals plus filename, path, assigning authority
-  - Optionally includes a preliminary EHR guess
+  - Contains extracted signals plus filename, full S3 path, assigning authority
+  - Includes processing time per record (POC diagnostics)
+  - Includes a preliminary EHR guess
+  - Full S3 path in each row so you know what's done vs. what's left
 
 
 ================================================================================
-CONFIGURATION — Edit these parameters before running
+CONFIGURATION — Edit the DEV/PROD profiles below before running
 ================================================================================
 """
 
@@ -111,7 +153,7 @@ DEV = {
     "bucket": "nyec.ccda.learning",
     "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
     "output_csv": "DEV-EHR_Software_Names.csv",
-    "max_files": 50,  # Quick test run; change to None to process all
+    "max_files": 2000,  # Quick test run; change to None to process all
 }
 
 # ============================================================================
