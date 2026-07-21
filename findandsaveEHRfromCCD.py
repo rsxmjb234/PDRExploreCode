@@ -87,11 +87,10 @@ CONFIGURATION — Edit these parameters before running
 """
 
 import boto3
-import xml.etree.ElementTree as ET
 import csv
-import io
 import os
 import re
+import time
 from collections import Counter
 
 
@@ -111,7 +110,7 @@ DEV = {
     "aws_profile": "student1",
     "bucket": "nyec.ccda.learning",
     "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
-    "output_csv": "ehr_software_names_DEV.csv",
+    "output_csv": "DEV-EHR_Software_Names.csv",
     "max_files": 50,  # Quick test run; change to None to process all
 }
 
@@ -125,8 +124,8 @@ PROD = {
     "aws_profile": "dan-prod",                                      # Dan: your AWS CLI profile
     "bucket": "nyec-pdr-prod-hixny",                               # Dan: your PDR bucket (or QA bucket)
     "input_csv": "PROD-upto20documentsfromeveryAAForASingleDay.csv", # Dan: Athena export CSV
-    "output_csv": "ehr_software_names_PROD.csv",
-    "max_files": None,                                             # None = process all documents
+    "output_csv": "PROD-EHR_Software_Names.csv",
+    "max_files": 20,                                             # None = process all documents
 }
 
 # ============================================================================
@@ -166,6 +165,9 @@ OUTPUT_FIELDS = [
     "Path",                           # Full S3 path (s3://bucket/key) - so you know what's done
     "FileName",                       # Just the filename (for quick scanning)
     
+    # Performance tracking (POC diagnostics)
+    "ProcessingTimeMS",               # Time to download + extract this file (milliseconds)
+    
     # Source identification
     "Assigning-Authority",            # Who sent this document (source system ID)
     "OID",                            # Patient ID root OID
@@ -180,15 +182,12 @@ OUTPUT_FIELDS = [
     # Signal 3: Template IDs
     "templateIds",                    # All document-level template OIDs
     
-    # Signal 4: Section sequence
-    "sectionOrder",                   # Ordered list with titles and LOINC codes
-    
-    # Signal 5: OID analysis
+    # Signal 4: OID analysis
     "hasEpicOID",                     # YES/NO — contains 1.2.840.114350?
     "epicOIDsFound",                  # List of actual Epic OIDs (if any)
     "allOIDFamilies",                 # Unique OID family prefixes in document
     
-    # Signal 6: XML formatting
+    # Signal 5: XML formatting
     "indentStyle",                    # 2-space, 4-space, tabs, mixed, etc.
     
     # Preliminary classification (optional)
@@ -201,22 +200,44 @@ OUTPUT_FIELDS = [
 # EPIC REFERENCE PATTERNS
 # ============================================================================
 
-# Epic's standard section ordering (LOINC codes)
-# These appear in almost every Epic-generated CCD
-EPIC_SECTION_LOINC_ORDER = [
-    "48765-2",  # Allergies / Adverse Reactions
-    "10160-0",  # Medications / Current Medications
-    "11450-4",  # Problems / Problem List
-    "30954-2",  # Results / Diagnostic Results / Laboratory
-    "8716-3",   # Vital Signs
-    "47519-4",  # Procedures
-]
-
 # Epic's assigned OID family (registered with IANA)
 EPIC_OID_FAMILY = "1.2.840.114350"
 
 # XML namespace used in all CDA documents
 CDA_NAMESPACE = "urn:hl7-org:v3"
+
+
+# ============================================================================
+# PERFORMANCE OPTIMIZATION: Partial Download (S3 Range Request)
+# ============================================================================
+# 
+# IMPORTANT NOTE FOR FUTURE DEVELOPERS:
+#
+# We download ONLY the first 100KB of each CCD file (not the full document).
+# This is a deliberate optimization for speed at scale (100K+ documents).
+#
+# Why this works:
+#   All of our strongest signals (softwareName, manufacturerModelName,
+#   custodianOrgName, templateIds, patient OIDs, and Epic OIDs) live in the
+#   CDA header, which is always within the first 50KB of the document.
+#   We use 100KB (2x safety margin) to be sure we capture the full header.
+#
+# What we gave up:
+#   - Section order analysis (removed) — this signal required parsing the
+#     full document body. It was a MEDIUM-weight signal (0.15) and not worth
+#     downloading multi-MB files for.
+#   - OID scanning of deep document entries — we only see OIDs in the first
+#     100KB. In practice, Epic's OID family appears in the header IDs, so
+#     this is still effective.
+#
+# If you need to look deeper into the document in the future:
+#   - Increase DOWNLOAD_BYTES below (e.g., to 500KB or None for full file)
+#   - Re-enable section order extraction
+#   - Switch back to full XML parsing (the old code used ET.parse)
+#
+# Speed gain: ~100x less data transfer per file (100KB vs 5-10MB avg)
+
+DOWNLOAD_BYTES = 102400  # 100KB — covers the full CDA header with 2x margin
 
 
 # ============================================================================
@@ -404,179 +425,107 @@ def detect_xml_indentation_style(raw_xml_text):
 
 
 # ============================================================================
-# HELPER: CCD XML Parsing (Main Signal Extraction)
+# HELPER: CCD Header Extraction (Regex-Based, for Partial Downloads)
 # ============================================================================
 
-def extract_all_fingerprint_signals(xml_bytes):
+def extract_all_fingerprint_signals(partial_xml_bytes):
     """
-    Parse a CCD XML document and extract all 7 fingerprint signals.
+    Extract fingerprint signals from the FIRST 100KB of a CCD document.
     
-    This is the core of the analysis. We pull out every structural marker
-    that might indicate which EHR system created this CCD.
+    IMPORTANT: This function uses REGEX (not XML parsing) because we only
+    download a partial file. A standard XML parser would fail on incomplete XML.
+    
+    This works because all our signals live in the CDA header (first ~50KB):
+      - softwareName, manufacturerModelName (in assignedAuthoringDevice)
+      - custodianOrgName (in custodian section)
+      - templateIds (at document root, very near the top)
+      - OIDs with @root attributes (patient IDs, author IDs in header)
+      - Indentation style (first 200 lines)
     
     Args:
-        xml_bytes (bytes): The raw CCD XML file (as bytes from S3)
+        partial_xml_bytes (bytes): The first 100KB of the CCD XML file
     
     Returns:
-        dict: A dictionary with these keys:
-            - Assigning-Authority: The source system ID
-            - OID: Patient ID root OID
-            - softwareName: From assignedAuthoringDevice
-            - manufacturerModelName: Backup software ID
-            - custodianOrgName: Organization name
-            - templateIds: Pipe-separated list of template OIDs
-            - sectionOrder: Arrow-separated section titles with LOINC codes
-            - hasEpicOID: "YES" or "NO"
-            - epicOIDsFound: Pipe-separated list of Epic OIDs (if any)
-            - allOIDFamilies: Pipe-separated unique OID family prefixes
-            - indentStyle: "2-space", "4-space", "tabs", "mixed", or "none"
-    
-    Raises:
-        Exception: If the XML is malformed or cannot be parsed
+        dict: Extracted fingerprint signals (see OUTPUT_FIELDS for keys)
     """
     
-    # Convert bytes to string (we need this for indentation analysis)
-    raw_xml_text = xml_bytes.decode("utf-8", errors="replace")
-    
-    # Parse the XML into a tree
-    tree = ET.parse(io.BytesIO(xml_bytes))
-    root = tree.getroot()
-
-    # CDA namespace (all CDA elements live in this namespace)
-    ns = CDA_NAMESPACE
+    # Convert bytes to string for regex matching
+    raw_text = partial_xml_bytes.decode("utf-8", errors="replace")
 
     # =========================================================================
     # SIGNAL 1: Software Name
     # =========================================================================
-    # Location: //assignedAuthoringDevice/softwareName
-    # This is often the most direct indicator. If the document says
-    # "Epic - Version 2023" or similar, we're done. But some vendors
-    # sanitize this field (Synthea sets it to their GitHub URL, etc.).
+    # Look for: <softwareName>Epic - Version 2023</softwareName>
+    # Regex: find content between softwareName tags
     
-    software_name_element = root.find(
-        f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}softwareName"
-    )
-    software_name = (
-        software_name_element.text.strip()
-        if (software_name_element is not None and software_name_element.text)
-        else ""
-    )
+    software_name = ""
+    match = re.search(r"<[^>]*softwareName[^>]*>([^<]+)</", raw_text)
+    if match:
+        software_name = match.group(1).strip()
 
     # =========================================================================
     # SIGNAL 2: Manufacturer Model Name
     # =========================================================================
-    # Location: //assignedAuthoringDevice/manufacturerModelName
-    # Backup field; sometimes contains vendor branding when softwareName
-    # is generic.
+    # Look for: <manufacturerModelName>EpicCare Ambulatory</manufacturerModelName>
     
-    manufacturer_element = root.find(
-        f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}manufacturerModelName"
-    )
-    manufacturer_model = (
-        manufacturer_element.text.strip()
-        if (manufacturer_element is not None and manufacturer_element.text)
-        else ""
-    )
+    manufacturer_model = ""
+    match = re.search(r"<[^>]*manufacturerModelName[^>]*>([^<]+)</", raw_text)
+    if match:
+        manufacturer_model = match.group(1).strip()
 
     # =========================================================================
     # SIGNAL 3: Custodian Organization Name
     # =========================================================================
-    # Location: //custodian/assignedCustodian/representedCustodianOrganization/name
-    # This is the organization responsible for the document. Less vendor-specific
-    # than software name, but useful for context.
+    # Look for: <name>Strong Memorial Hospital</name> inside the custodian block
+    # We look for representedCustodianOrganization...name pattern
     
-    custodian_element = root.find(
-        f".//{{{ns}}}custodian/{{{ns}}}assignedCustodian/{{{ns}}}representedCustodianOrganization/{{{ns}}}name"
+    custodian_org = ""
+    # Find the custodian block, then grab the <name> inside it
+    custodian_block = re.search(
+        r"<[^>]*custodian[^>]*>(.*?)</[^>]*custodian",
+        raw_text, re.DOTALL
     )
-    custodian_org = (
-        custodian_element.text.strip()
-        if (custodian_element is not None and custodian_element.text)
-        else ""
-    )
+    if custodian_block:
+        name_match = re.search(r"<[^>]*name[^>]*>([^<]+)</", custodian_block.group(1))
+        if name_match:
+            custodian_org = name_match.group(1).strip()
 
     # =========================================================================
     # SIGNAL 4: Template IDs (Document-Level)
     # =========================================================================
-    # Location: //ClinicalDocument/templateId elements
-    # These OIDs declare which CDA standards/profiles the document conforms to.
-    # Epic uses specific OID combinations; other vendors have different patterns.
-    # (Note: templateId can have both @root and @extension attributes.)
+    # Look for: <templateId root="2.16.840.1.113883.10.20.22.1.2" extension="2015-08-01"/>
+    # These appear near the top of the document
     
     template_ids = []
-    for template_element in root.findall(f"{{{ns}}}templateId"):
-        oid = template_element.get("root", "")
-        extension = template_element.get("extension", "")
+    for match in re.finditer(r'<[^>]*templateId[^>]*root="([^"]*)"([^>]*)', raw_text):
+        oid = match.group(1)
+        # Check for extension attribute
+        ext_match = re.search(r'extension="([^"]*)"', match.group(2))
+        extension = ext_match.group(1) if ext_match else ""
         
-        # Format as "OID:extension" if there's an extension, else just "OID"
         if extension:
             template_ids.append(f"{oid}:{extension}")
         else:
             template_ids.append(oid)
 
     # =========================================================================
-    # SIGNAL 5: Section Order (with LOINC Codes)
+    # SIGNAL 5: OID Families (from all root="" attributes in the header)
     # =========================================================================
-    # Location: //component/structuredBody/component/section (or alternate paths)
-    # The order of sections is very distinctive. Epic almost always follows:
-    #   Allergies(48765-2) → Medications(10160-0) → Problems(11450-4) →
-    #   Results(30954-2) → Vital Signs(8716-3) → Procedures(47519-4)
-    # Other vendors have different orderings.
-    
-    # Try the standard CDA path first
-    sections = root.findall(
-        f".//{{{ns}}}component/{{{ns}}}structuredBody/{{{ns}}}component/{{{ns}}}section"
-    )
-    
-    # If that didn't work, try an alternate path (some CCDs nest differently)
-    if not sections:
-        sections = root.findall(f".//{{{ns}}}component/{{{ns}}}section")
-
-    section_order = []
-    for section in sections:
-        # Get the section title (human-readable name, e.g., "Allergies")
-        title_element = section.find(f"{{{ns}}}title")
-        title = (
-            title_element.text.strip()
-            if (title_element is not None and title_element.text)
-            else ""
-        )
-
-        # Get the LOINC code (machine-readable section type, e.g., "48765-2")
-        code_element = section.find(f"{{{ns}}}code")
-        loinc_code = code_element.get("code", "") if code_element is not None else ""
-
-        # Format as "Title(LOINC)" for easy reading and parsing
-        if loinc_code:
-            section_order.append(f"{title}({loinc_code})")
-        else:
-            section_order.append(title)
-
-    # =========================================================================
-    # SIGNAL 6: OID Families
-    # =========================================================================
-    # Location: Every element's @root attribute (patient IDs, encounter IDs, etc.)
-    # Epic is assigned OID family 1.2.840.114350. If we see OIDs from this
-    # family, it's a strong signal the document came from an Epic system.
-    # Other vendors use different OID roots.
+    # Scan all root="..." attributes in the partial content
+    # Epic's family: 1.2.840.114350
     
     all_oids = set()
-    
-    # Iterate through every element in the XML
-    for element in root.iter():
-        root_oid = element.get("root", "")
-        
-        # Only collect dotted OIDs (e.g., "1.2.840.114350.x.x")
-        # Skip UUIDs (which look like "123abc-456def-789...")
-        if root_oid and re.match(r"^\d+\.\d+", root_oid):
-            all_oids.add(root_oid)
+    for match in re.finditer(r'root="([^"]*)"', raw_text):
+        oid_value = match.group(1)
+        # Only collect dotted OIDs (skip UUIDs like "abc123-def456-...")
+        if re.match(r"^\d+\.\d+", oid_value):
+            all_oids.add(oid_value)
 
     # Check specifically for Epic's OID family
     epic_oids_found = [o for o in all_oids if o.startswith(EPIC_OID_FAMILY)]
     has_epic_oid = "YES" if epic_oids_found else "NO"
 
     # Extract OID family prefixes (first 3 segments)
-    # E.g., "1.2.840.114350.1.13.297" → "1.2.840"
-    # This helps us see the variety of OID roots in use
     oid_families = set()
     for oid in all_oids:
         parts = oid.split(".")
@@ -584,41 +533,53 @@ def extract_all_fingerprint_signals(xml_bytes):
             oid_families.add(".".join(parts[:3]))
 
     # =========================================================================
-    # SIGNAL 7: XML Formatting Style
+    # SIGNAL 6: XML Formatting Style
     # =========================================================================
-    # Indentation pattern can be a minor fingerprint. Epic's serializers
-    # typically use consistent 2-space indentation.
+    # Analyze indentation of the first 200 lines
     
-    indent_style = detect_xml_indentation_style(raw_xml_text)
+    indent_style = detect_xml_indentation_style(raw_text)
 
     # =========================================================================
     # METADATA: Assigning Authority and Patient OID
     # =========================================================================
-    # These aren't fingerprints, but they're critical for grouping and
-    # understanding the source of the document.
-    # Location: //recordTarget/patientRole/id
+    # Look for: <id root="..." assigningAuthorityName="..." /> in recordTarget
     
-    patient_id_elements = root.findall(
-        f".//{{{ns}}}recordTarget/{{{ns}}}patientRole/{{{ns}}}id"
-    )
     assigning_authority = ""
     patient_oid = ""
-
-    # Prefer non-Synthea (non-test) assigning authorities
-    for patient_id_element in patient_id_elements:
-        aa = patient_id_element.get("assigningAuthorityName", "")
-        oid = patient_id_element.get("root", "")
-        
+    
+    # Find all id elements with assigningAuthorityName
+    for match in re.finditer(
+        r'<[^>]*id[^>]*assigningAuthorityName="([^"]*)"[^>]*root="([^"]*)"',
+        raw_text
+    ):
+        aa = match.group(1).strip()
+        oid = match.group(2).strip()
         if aa and "synthea" not in aa.lower():
             assigning_authority = aa
             patient_oid = oid
             break
-    else:
-        # If all are Synthea (test data), just take the first one
-        if patient_id_elements:
-            first = patient_id_elements[0]
-            assigning_authority = first.get("assigningAuthorityName", "")
-            patient_oid = first.get("root", "")
+    
+    # Try alternate attribute order (root before assigningAuthorityName)
+    if not assigning_authority:
+        for match in re.finditer(
+            r'<[^>]*id[^>]*root="([^"]*)"[^>]*assigningAuthorityName="([^"]*)"',
+            raw_text
+        ):
+            oid = match.group(1).strip()
+            aa = match.group(2).strip()
+            if aa and "synthea" not in aa.lower():
+                assigning_authority = aa
+                patient_oid = oid
+                break
+    
+    # If we still didn't find one, take whatever is first
+    if not assigning_authority:
+        match = re.search(r'assigningAuthorityName="([^"]*)"', raw_text)
+        if match:
+            assigning_authority = match.group(1).strip()
+        match = re.search(r'<[^>]*id[^>]*root="(\d+\.\d+[^"]*)"', raw_text)
+        if match:
+            patient_oid = match.group(1).strip()
 
     # =========================================================================
     # RETURN ALL SIGNALS
@@ -631,10 +592,9 @@ def extract_all_fingerprint_signals(xml_bytes):
         "manufacturerModelName": manufacturer_model,
         "custodianOrgName": custodian_org,
         "templateIds": " | ".join(template_ids),
-        "sectionOrder": " -> ".join(section_order),
         "hasEpicOID": has_epic_oid,
-        "epicOIDsFound": " | ".join(sorted(epic_oids_found)[:10]),  # First 10 only
-        "allOIDFamilies": " | ".join(sorted(oid_families)[:20]),     # First 20 only
+        "epicOIDsFound": " | ".join(sorted(epic_oids_found)[:10]),
+        "allOIDFamilies": " | ".join(sorted(oid_families)[:20]),
         "indentStyle": indent_style,
     }
 
@@ -709,33 +669,7 @@ def make_preliminary_ehr_guess(fingerprints):
         reasons.append("has Epic OID (1.2.840.114350)")
 
     # =========================================================================
-    # SIGNAL CHECK 3: Section Order
-    # =========================================================================
-    # Extract LOINC codes from the section order string.
-    # Epic's order is so distinctive that matching the first 4 sections
-    # (Allergies → Meds → Problems → Results) is strong evidence.
-    
-    section_order_str = fingerprints.get("sectionOrder", "")
-    
-    # Find all LOINC codes in the format "Title(LOINC)" using regex
-    # Regex explanation: \( = literal "(", (\d+-\d+) = capture digits-digits, \) = literal ")"
-    loinc_codes = re.findall(r"\((\d+-\d+)\)", section_order_str)
-    
-    if len(loinc_codes) >= 4:
-        # Get Epic's expected first 4 LOINC codes
-        epic_first_4 = EPIC_SECTION_LOINC_ORDER[:4]
-        
-        # Check if this document's first 4 match Epic's pattern exactly
-        if loinc_codes[:4] == epic_first_4:
-            score += 0.15
-            reasons.append("section order matches Epic pattern (first 4)")
-        # Weaker signal: just the first 2 match
-        elif loinc_codes[:2] == epic_first_4[:2]:
-            score += 0.05
-            reasons.append("partial section order match (first 2 sections)")
-
-    # =========================================================================
-    # SIGNAL CHECK 4: Standard CCD TemplateID
+    # SIGNAL CHECK 3: Standard CCD TemplateID
     # =========================================================================
     # The standard CCD template (2.16.840.1.113883.10.20.22.1.2) is expected
     # in almost all CCDs, so it's not distinctive on its own. But if we
@@ -750,7 +684,7 @@ def make_preliminary_ehr_guess(fingerprints):
             reasons.append("standard CCD templateId with other Epic signals")
 
     # =========================================================================
-    # SIGNAL CHECK 5: XML Formatting
+    # SIGNAL CHECK 4: XML Formatting
     # =========================================================================
     # Epic's serializers typically use consistent 2-space indentation.
     # This is a weak signal on its own, but supporting evidence if we
@@ -780,6 +714,44 @@ def make_preliminary_ehr_guess(fingerprints):
 
     reason_text = "; ".join(reasons) if reasons else "no signals"
     return guess, reason_text
+
+
+# ============================================================================
+# HELPER: Flush Results to Disk (Crash Protection)
+# ============================================================================
+
+# How often to flush results to the output CSV (in number of records).
+# Lower = safer (less lost work on crash), Higher = less disk I/O.
+FLUSH_EVERY_N_RECORDS = 200
+
+def _flush_results_to_csv(results, already_processed):
+    """
+    Write a batch of results to the output CSV.
+    
+    If the file doesn't exist yet, creates it with a header row.
+    If it already exists, appends without re-writing the header.
+    
+    Args:
+        results (list): List of result dictionaries to write
+        already_processed (set): Set of paths already in the CSV (used to
+                                  determine if we need a header)
+    """
+    if not results:
+        return
+    
+    file_exists = os.path.exists(OUTPUT_CSV) and os.path.getsize(OUTPUT_CSV) > 0
+    
+    if file_exists:
+        # Append mode — file already has header
+        with open(OUTPUT_CSV, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDS)
+            writer.writerows(results)
+    else:
+        # Fresh file — write header first
+        with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDS)
+            writer.writeheader()
+            writer.writerows(results)
 
 
 # ============================================================================
@@ -918,18 +890,28 @@ def main():
     print()
 
     results = []
+    run_start_time = time.time()
+    initial_processed_count = len(already_processed)
 
     for file_index, s3_key in enumerate(xml_keys, 1):
         file_name = os.path.basename(s3_key)
         file_dir = os.path.dirname(s3_key)
         
+        # Start timing this file
+        file_start_time = time.time()
+        
         print(f"  [{file_index:3d}/{len(xml_keys):3d}] {file_name}")
 
-        # --- Download from S3 ---
+        # --- Download first 100KB from S3 (range request) ---
         try:
-            response = s3_client.get_object(Bucket=BUCKET, Key=s3_key)
+            range_header = f"bytes=0-{DOWNLOAD_BYTES - 1}"
+            response = s3_client.get_object(
+                Bucket=BUCKET,
+                Key=s3_key,
+                Range=range_header
+            )
             xml_bytes = response["Body"].read()
-            print(f"               Downloaded {len(xml_bytes):,} bytes")
+            print(f"               Downloaded {len(xml_bytes):,} bytes (first 100KB)")
         except Exception as download_error:
             print(f"               [ERROR] Downloading: {download_error}")
             
@@ -966,40 +948,37 @@ def main():
         fingerprints["EHR-Guess"] = ehr_guess
         fingerprints["EHR-GuessReason"] = guess_reason
         
+        # --- Record processing time ---
+        file_elapsed_ms = int((time.time() - file_start_time) * 1000)
+        fingerprints["ProcessingTimeMS"] = file_elapsed_ms
+        
         print(f"               >> EHR Guess:  {ehr_guess} ({guess_reason[:60]}...)")
+        print(f"               >> Time: {file_elapsed_ms} ms")
         print()
 
         results.append(fingerprints)
 
+        # --- Flush to disk every 200 records (crash protection) ---
+        # This ensures we never lose more than 200 records of work if the
+        # script crashes, gets interrupted, or loses network connectivity.
+        if len(results) % 200 == 0:
+            _flush_results_to_csv(results, already_processed)
+            already_processed.update(f"s3://{BUCKET}/{k}" for k in xml_keys[:file_index])
+            results.clear()
+            print(f"  [FLUSH] Saved progress to disk ({file_index} files complete)")
+            print()
+
     # =========================================================================
-    # STEP 5: Write output CSV (append to existing if restarting)
+    # STEP 5: Write remaining results to output CSV
     # =========================================================================
     
     print()
-    print("STEP 5: Writing results to output CSV...")
+    print("STEP 5: Writing remaining results to output CSV...")
     print(f"  File: {OUTPUT_CSV}")
     
     try:
-        # If the file already exists (restart scenario), append new rows
-        # If it doesn't exist, create it with a header row
-        file_exists = os.path.exists(OUTPUT_CSV) and os.path.getsize(OUTPUT_CSV) > 0
-        
-        if file_exists and already_processed:
-            # APPEND mode: file already has a header and previous results
-            with open(OUTPUT_CSV, "a", newline="", encoding="utf-8") as output_file:
-                writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS)
-                writer.writerows(results)
-            
-            total_rows = len(already_processed) + len(results)
-            print(f"  [OK] Appended {len(results)} new rows (total now: {total_rows})")
-        else:
-            # FRESH mode: write header + all results
-            with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as output_file:
-                writer = csv.DictWriter(output_file, fieldnames=OUTPUT_FIELDS)
-                writer.writeheader()
-                writer.writerows(results)
-            
-            print(f"  [OK] Wrote {len(results)} rows (fresh start)")
+        _flush_results_to_csv(results, already_processed)
+        print(f"  [OK] Wrote final {len(results)} rows")
     except Exception as e:
         print(f"  [ERROR] Writing CSV: {e}")
         return
@@ -1013,10 +992,21 @@ def main():
     print("DONE!")
     print("=" * 75)
     print()
+    
+    total_elapsed_ms = int((time.time() - run_start_time) * 1000)
+    total_processed_this_run = len(xml_keys)
+    avg_ms = total_elapsed_ms // total_processed_this_run if total_processed_this_run else 0
+    
+    # Count actual rows in CSV for accurate reporting
+    final_csv_count = len(load_already_processed_paths(OUTPUT_CSV))
+    
     print("DEBUG SUMMARY:")
-    print(f"  Previously processed:    {len(already_processed)}")
-    print(f"  Processed this run:      {len(results)}")
-    print(f"  Total in output CSV:     {len(already_processed) + len(results)}")
+    print(f"  Previously processed:    {initial_processed_count}")
+    print(f"  Processed this run:      {total_processed_this_run}")
+    print(f"  Total in output CSV:     {final_csv_count}")
+    print()
+    print(f"  Total time this run:     {total_elapsed_ms:,} ms ({total_elapsed_ms / 1000:.1f} sec)")
+    print(f"  Avg time per record:     {avg_ms} ms")
     print()
     print(f"Output saved to: {OUTPUT_CSV}")
     print()

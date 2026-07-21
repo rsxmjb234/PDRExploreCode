@@ -8,6 +8,10 @@ to a CSV that mirrors the PROD format:
 
 This allows findandsaveEHRfromCCD.py to be driven from the same
 CSV format whether in DEV or PROD.
+
+In PROD this is done with a SQL query, because in PROD we have S3 inventory
+In DEV we don't have S3 inventory so we just scan the S3 by hand , loop through and make a CSV
+
 """
 
 import boto3
