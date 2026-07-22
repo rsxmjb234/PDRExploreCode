@@ -135,7 +135,7 @@ DEV = {
     "bucket": "nyec.ccda.learning",
     "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
     "output_csv": "DEV-EHR_Software_Names_EntireCCD.csv",   # Different from JustTopOfFile
-    "max_files": 3,
+    "max_files": 2000,
 }
 
 # ============================================================================
