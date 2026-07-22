@@ -48,7 +48,7 @@ HOW IT WORKS:
   5. On the next run, it picks up where it left off automatically.
   6.  this is important for all future scripts.
 
-PERFORMANCE NOTE:
+PERFORMANCE NOTE, on loading all 'done' S3 paths into memmory.:
   Loading 100K paths into a Python set uses ~12MB of RAM and takes ~1-2 seconds.
   The set lookup is O(1) per file. This scales without issue.
 
