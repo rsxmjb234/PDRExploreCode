@@ -153,7 +153,7 @@ DEV = {
     "bucket": "nyec.ccda.learning",
     "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
     "output_csv": "DEV-EHR_Software_Names.csv",
-    "max_files": 2000,  # Quick test run; change to None to process all
+    "max_files": 200,  # Quick test run; change to None to process all
 }
 
 # ============================================================================
@@ -235,7 +235,11 @@ OUTPUT_FIELDS = [
     # Preliminary classification (optional)
     "EHR-Guess",                      # EPIC, NOT-EPIC, or NOT SURE
     "EHR-GuessReason",                # Why we made that guess
+    "Parse_type",                     # "TopOnly" or "Entire" — for comparison runs
 ]
+
+# Constant value for the Parse_type column in this version of the script
+PARSE_TYPE = "TopOnly"
 
 
 # ============================================================================
@@ -843,8 +847,10 @@ def main():
     print(f"  File: {INPUT_CSV}")
     
     try:
-        xml_keys = read_input_csv_file(INPUT_CSV, max_files=MAX_FILES)
-        print(f"  [OK] Found {len(xml_keys)} CCD documents to process")
+        # Read ALL keys from the CSV (no limit here — we apply max_files AFTER
+        # filtering out already-processed files so we always get the NEXT batch)
+        xml_keys = read_input_csv_file(INPUT_CSV, max_files=None)
+        print(f"  [OK] Found {len(xml_keys)} total CCD documents in input CSV")
     except Exception as e:
         print(f"  [ERROR] Reading CSV: {e}")
         return
@@ -885,6 +891,11 @@ def main():
         xml_keys = remaining_keys
     else:
         print("  [OK] No existing output found -- starting fresh")
+    
+    # Apply max_files AFTER filtering — this gives us the next batch, not the first batch
+    if MAX_FILES and len(xml_keys) > MAX_FILES:
+        print(f"       Limiting this run to {MAX_FILES} files (max_files setting)")
+        xml_keys = xml_keys[:MAX_FILES]
     
     print()
 
@@ -980,6 +991,7 @@ def main():
         # --- Add file path info ---
         fingerprints["Path"] = f"s3://{BUCKET}/{s3_key}"
         fingerprints["FileName"] = file_name
+        fingerprints["Parse_type"] = PARSE_TYPE
 
         # --- Print key signals (for manual review during execution) ---
         print(f"               softwareName: {fingerprints.get('softwareName', '(blank)')[:50]}")
