@@ -203,36 +203,20 @@ OUTPUT_CSV = os.path.join(
 # ============================================================================
 
 OUTPUT_FIELDS = [
-    # File location info
-    "Path",                           # Full S3 path (s3://bucket/key) - so you know what's done
-    "FileName",                       # Just the filename (for quick scanning)
-    
-    # Performance tracking (POC diagnostics)
-    "ProcessingTimeMS",               # Time to download + extract this file (milliseconds)
-    
-    # Source identification
-    "Assigning-Authority",            # Who sent this document (source system ID)
+    "Path",                           # Full S3 path (s3://bucket/key)
+    "FileName",                       # Just the filename
+    "ProcessingTimeMS",               # Time to download + extract (milliseconds)
+    "FileSizeBytes",                  # File size downloaded (partial = 100KB, full = actual)
+    "Assigning-Authority",            # Source system ID
     "OID",                            # Patient ID root OID
-    
-    # Signal 1: Software markers
     "softwareName",                   # From assignedAuthoringDevice
     "manufacturerModelName",          # Backup software identifier
-    
-    # Signal 2: Organization info
     "custodianOrgName",               # Organization hosting/sending the CCD
-    
-    # Signal 3: Template IDs
     "templateIds",                    # All document-level template OIDs
-    
-    # Signal 4: OID analysis
     "hasEpicOID",                     # YES/NO — contains 1.2.840.114350?
-    "epicOIDsFound",                  # List of actual Epic OIDs (if any)
-    "allOIDFamilies",                 # Unique OID family prefixes in document
-    
-    # Signal 5: XML formatting
+    "epicOIDsFound",                  # List of actual Epic OIDs
+    "allOIDFamilies",                 # Unique OID family prefixes
     "indentStyle",                    # 2-space, 4-space, tabs, mixed, etc.
-    
-    # Preliminary classification (optional)
     "EHR-Guess",                      # EPIC, NOT-EPIC, or NOT SURE
     "EHR-GuessReason",                # Why we made that guess
     "Parse_type",                     # "TopOnly" or "Entire" — for comparison runs
@@ -991,6 +975,7 @@ def main():
         # --- Add file path info ---
         fingerprints["Path"] = f"s3://{BUCKET}/{s3_key}"
         fingerprints["FileName"] = file_name
+        fingerprints["FileSizeBytes"] = len(xml_bytes)
         fingerprints["Parse_type"] = PARSE_TYPE
 
         # --- Print key signals (for manual review during execution) ---
