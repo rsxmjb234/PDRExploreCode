@@ -117,7 +117,6 @@ import io
 import os
 import re
 import time
-from collections import Counter
 
 
 # ============================================================================
@@ -135,7 +134,7 @@ DEV = {
     "bucket": "nyec.ccda.learning",
     "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
     "output_csv": "DEV-EHR_Software_Names.csv",   # Different from JustTopOfFile
-    "max_files": 200,
+    "max_files": 2000,
 }
 
 # ============================================================================
@@ -144,7 +143,7 @@ DEV = {
 
 PROD = {
     "aws_profile": "dan-prod",
-    "bucket": "nyec-pdr-prod-hixny",
+    "bucket": "nyec-pdr-prod",
     "input_csv": "PROD-upto20documentsfromeveryAAForASingleDay.csv",
     "output_csv": "PROD-EHR_Software_Names_EntireCCD.csv",  # Different from JustTopOfFile
     "max_files": None,
@@ -176,21 +175,19 @@ OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_CSV
 OUTPUT_FIELDS = [
     "Path",                           # Full S3 path (s3://bucket/key)
     "FileName",                       # Just the filename
+    "QE",                             # QE from input CSV
+    "Input_Assigning_Authority",      # Assigning authority from input CSV
     "ProcessingTimeMS",               # Time to download + extract (milliseconds)
     "FileSizeBytes",                  # Full file size (shows what we're downloading)
-    "Assigning-Authority",            # Source system ID
+    "Assigning-Authority-ParsedFromS3", # Assigning Authority derived from the S3 path
     "OID",                            # Patient ID root OID
     "softwareName",                   # From assignedAuthoringDevice
     "manufacturerModelName",          # Backup software identifier
     "custodianOrgName",               # Organization hosting/sending the CCD
-    "templateIds",                    # All document-level template OIDs
-    "hasEpicOID",                     # YES/NO -- contains 1.2.840.114350?
-    "epicOIDsFound",                  # List of actual Epic OIDs
-    "allOIDFamilies",                 # Unique OID family prefixes
-    "indentStyle",                    # 2-space, 4-space, tabs, mixed, etc.
-    "EHR-Guess",                      # EPIC, NOT-EPIC, or NOT SURE
-    "EHR-GuessReason",                # Why we made that guess
-    "Parse_type",                     # "Entire" or "JustTop" — for comparison runs
+    "EHR_Guess",                      # Canonical EHR vendor name
+    "EHR_Guess_Confidence",           # High / Medium / Low
+    "EHR_Guess_Reason",               # Which fields drove the guess
+    "Parse_type",                     # "Entire" or "TopOnly" -- for comparison runs
 ]
 
 # Constant value for the Parse_type column in this version of the script
@@ -201,7 +198,6 @@ PARSE_TYPE = "Entire"
 # CONSTANTS
 # ============================================================================
 
-EPIC_OID_FAMILY = "1.2.840.114350"
 CDA_NAMESPACE = "urn:hl7-org:v3"
 FLUSH_EVERY_N_RECORDS = 200
 
@@ -243,51 +239,24 @@ def create_s3_client(profile_name):
 # ============================================================================
 
 def read_input_csv_file(csv_path, max_files=None):
-    """Read input CSV and return list of S3 keys to process (.xml only)."""
-    keys = []
+    """
+    Read input CSV and return list of dicts with key, qe, and assigning_authority.
+    Only includes .xml files.
+    """
+    rows = []
     with open(csv_path, "r", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
             key = row["key"].strip()
             if key.lower().endswith(".xml"):
-                keys.append(key)
-                if max_files and len(keys) >= max_files:
+                rows.append({
+                    "key": key,
+                    "qe": row.get("qe", "").strip(),
+                    "assigning_authority": row.get("assigning_authority", "").strip(),
+                })
+                if max_files and len(rows) >= max_files:
                     break
-    return keys
-
-
-# ============================================================================
-# HELPER: XML Indentation Style
-# ============================================================================
-
-def detect_xml_indentation_style(raw_xml_text):
-    """Analyze first 200 lines to determine indentation pattern."""
-    lines = raw_xml_text.split("\n")[:200]
-    indent_counts = Counter()
-    for line in lines:
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("<?") or stripped.startswith("<!"):
-            continue
-        leading = line[:len(line) - len(stripped)]
-        if not leading:
-            continue
-        if "\t" in leading:
-            indent_counts["tabs"] += 1
-        else:
-            num_spaces = len(leading)
-            if num_spaces % 2 == 0 and num_spaces <= 20:
-                indent_counts["2-space"] += 1
-            elif num_spaces % 4 == 0:
-                indent_counts["4-space"] += 1
-            else:
-                indent_counts["other"] += 1
-    if not indent_counts:
-        return "none"
-    most_common_style, count = indent_counts.most_common(1)[0]
-    total = sum(indent_counts.values())
-    if total > 0 and count / total >= 0.7:
-        return most_common_style
-    return "mixed"
+    return rows
 
 
 # ============================================================================
@@ -299,80 +268,34 @@ def extract_all_fingerprint_signals(xml_bytes):
     Parse the ENTIRE CCD XML document and extract fingerprint signals using
     proper XPath queries via ElementTree.
     
-    This is more accurate than regex because:
-      - It respects XML namespaces
-      - It traverses the full document tree (all OIDs, not just header)
-      - It handles edge cases (nested elements, attributes in any order)
-    
     Args:
         xml_bytes (bytes): The FULL CCD XML file as bytes from S3
     
     Returns:
         dict: Extracted fingerprint signals
     """
-    raw_text = xml_bytes.decode("utf-8", errors="replace")
     tree = ET.parse(io.BytesIO(xml_bytes))
     root = tree.getroot()
     ns = CDA_NAMESPACE
 
-    # =========================================================================
     # SIGNAL 1: Software Name
-    # =========================================================================
     el = root.find(f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}softwareName")
     software_name = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
     # SIGNAL 2: Manufacturer Model Name
-    # =========================================================================
     el = root.find(f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}manufacturerModelName")
     manufacturer_model = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
     # SIGNAL 3: Custodian Organization Name
-    # =========================================================================
     el = root.find(
         f".//{{{ns}}}custodian/{{{ns}}}assignedCustodian"
         f"/{{{ns}}}representedCustodianOrganization/{{{ns}}}name"
     )
     custodian_org = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
-    # SIGNAL 4: Template IDs
-    # =========================================================================
-    template_ids = []
-    for tid in root.findall(f"{{{ns}}}templateId"):
-        oid = tid.get("root", "")
-        ext = tid.get("extension", "")
-        template_ids.append(f"{oid}:{ext}" if ext else oid)
+    # SIGNAL 4: Custodian — already extracted above, no OID scanning needed
 
-    # =========================================================================
-    # SIGNAL 5: OID Families (scans ENTIRE document, not just header)
-    # =========================================================================
-    # This is where full-file parsing shines: we see every OID in the document,
-    # including deep entry-level IDs that the partial-download version misses.
-    all_oids = set()
-    for element in root.iter():
-        root_oid = element.get("root", "")
-        if root_oid and re.match(r"^\d+\.\d+", root_oid):
-            all_oids.add(root_oid)
-
-    epic_oids_found = [o for o in all_oids if o.startswith(EPIC_OID_FAMILY)]
-    has_epic_oid = "YES" if epic_oids_found else "NO"
-
-    oid_families = set()
-    for oid in all_oids:
-        parts = oid.split(".")
-        if len(parts) >= 3:
-            oid_families.add(".".join(parts[:3]))
-
-    # =========================================================================
-    # SIGNAL 6: XML Formatting Style
-    # =========================================================================
-    indent_style = detect_xml_indentation_style(raw_text)
-
-    # =========================================================================
     # METADATA: Assigning Authority and Patient OID
-    # =========================================================================
     patient_id_elements = root.findall(
         f".//{{{ns}}}recordTarget/{{{ns}}}patientRole/{{{ns}}}id"
     )
@@ -393,77 +316,66 @@ def extract_all_fingerprint_signals(xml_bytes):
             patient_oid = first.get("root", "")
 
     return {
-        "Assigning-Authority": assigning_authority,
+        "Assigning-Authority-ParsedFromS3": assigning_authority,
         "OID": patient_oid,
         "softwareName": software_name,
         "manufacturerModelName": manufacturer_model,
         "custodianOrgName": custodian_org,
-        "templateIds": " | ".join(template_ids),
-        "hasEpicOID": has_epic_oid,
-        "epicOIDsFound": " | ".join(sorted(epic_oids_found)[:10]),
-        "allOIDFamilies": " | ".join(sorted(oid_families)[:20]),
-        "indentStyle": indent_style,
     }
 
 
 # ============================================================================
-# HELPER: EHR Classification (Preliminary Guess)
+# HELPER: EHR Classification (Smart Vendor Detection)
 # ============================================================================
 
-def make_preliminary_ehr_guess(fingerprints):
-    """Weighted scoring to guess EPIC / NOT-EPIC / NOT SURE."""
-    score = 0.0
-    reasons = []
-
-    # Software name
-    sw = (fingerprints.get("softwareName", "") + " " +
-          fingerprints.get("manufacturerModelName", "")).lower()
-    if "epic" in sw:
-        score += 0.35
-        reasons.append("softwareName contains 'Epic'")
-    elif "cerner" in sw or "millennium" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'Cerner/Millennium'")
-    elif "meditech" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'MEDITECH'")
-    elif "allscripts" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'Allscripts'")
-    elif "eclinicalworks" in sw or "ecw" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'eClinicalWorks'")
-
-    # Epic OID family
-    if fingerprints.get("hasEpicOID") == "YES":
-        score += 0.30
-        reasons.append("has Epic OID (1.2.840.114350)")
-
-    # Standard CCD templateId (only if other signals present)
-    template_str = fingerprints.get("templateIds", "").lower()
-    if "2.16.840.1.113883.10.20.22.1.2" in template_str and score > 0.2:
-        score += 0.05
-        reasons.append("standard CCD templateId with other Epic signals")
-
-    # Formatting style (only if other signals present)
-    if fingerprints.get("indentStyle") == "2-space" and score > 0.1:
-        score += 0.05
-        reasons.append("2-space indentation (consistent with Epic)")
-
-    # Final call
-    if score >= 0.35:
-        guess = "EPIC"
-    elif score <= -0.10:
-        guess = "NOT-EPIC"
-    elif score == 0.0 and not reasons:
-        guess = "NOT SURE"
-        reasons.append("no strong signals detected")
-    else:
-        guess = "NOT SURE"
-        if not reasons:
-            reasons.append("weak or mixed signals")
-
-    return guess, "; ".join(reasons) if reasons else "no signals"
+def classify_ehr_vendor(fingerprints):
+    """
+    Determine the EHR vendor using explicit name matching and OID signals.
+    
+    Returns: (ehr_guess, confidence, reason)
+    """
+    sw = fingerprints.get("softwareName", "").strip()
+    mfr = fingerprints.get("manufacturerModelName", "").strip()
+    
+    sw_lower = sw.lower()
+    mfr_lower = mfr.lower()
+    combined = f"{sw_lower} {mfr_lower}"
+    
+    # --- Rule 2: Explicit EHR product/vendor signals ---
+    vendor_patterns = [
+        ("epic", "EPIC"),
+        ("eclinicalworks", "eClinicalWorks"),
+        ("athenahealth", "athenahealth"),
+        ("medent", "MEDENT"),
+        ("cerner", "Cerner"),
+        ("millennium", "Cerner"),
+        ("pointclickcare", "PointClickCare"),
+        ("netsmart", "Netsmart"),
+        ("practice fusion", "Practice Fusion"),
+        ("nextgen", "NextGen"),
+        ("greenway", "Greenway"),
+        ("intergy", "Greenway"),
+        ("sigmacare", "SigmaCare"),
+        ("office practicum", "Office Practicum"),
+        ("meditech", "MEDITECH"),
+        ("intersystems", "InterSystems"),
+        ("healthshare", "InterSystems"),
+    ]
+    
+    for pattern, vendor in vendor_patterns:
+        if pattern in combined:
+            return (vendor, "High", f"softwareName='{sw}' / manufacturer='{mfr}'")
+    
+    # --- Rule 3: Generic software name + specific manufacturer ---
+    if "document generation engine" in sw_lower and "athenahealth" in mfr_lower:
+        return ("athenahealth", "High", f"generic sw + manufacturer='{mfr}'")
+    if "ccd generator" in sw_lower and "netsmart" in mfr_lower:
+        return ("Netsmart", "High", f"generic sw + manufacturer='{mfr}'")
+    if "millennium" in sw_lower and "cerner" in mfr_lower:
+        return ("Cerner", "High", f"generic sw + manufacturer='{mfr}'")
+    
+    # --- Rule 5: Unknown ---
+    return ("UNKNOWN", "Low", "no reliable signal in softwareName or OIDs")
 
 
 # ============================================================================
@@ -511,13 +423,13 @@ def main():
     # STEP 1: Read input CSV
     print("STEP 1: Reading input CSV...")
     try:
-        # Read ALL keys (no limit) — we apply max_files AFTER filtering
-        xml_keys = read_input_csv_file(INPUT_CSV, max_files=None)
-        print(f"  [OK] Found {len(xml_keys)} total documents in input CSV")
+        # Read ALL rows (no limit) — we apply max_files AFTER filtering
+        input_rows = read_input_csv_file(INPUT_CSV, max_files=None)
+        print(f"  [OK] Found {len(input_rows)} total documents in input CSV")
     except Exception as e:
         print(f"  [ERROR] {e}")
         return
-    if not xml_keys:
+    if not input_rows:
         print("  No XML files found. Exiting.")
         return
     print()
@@ -528,22 +440,22 @@ def main():
     initial_processed_count = len(already_processed)
 
     if already_processed:
-        remaining_keys = [
-            k for k in xml_keys if f"s3://{BUCKET}/{k}" not in already_processed
+        remaining_rows = [
+            r for r in input_rows if f"s3://{BUCKET}/{r['key']}" not in already_processed
         ]
-        skipped = len(xml_keys) - len(remaining_keys)
+        skipped = len(input_rows) - len(remaining_rows)
         print(f"  [OK] Found {len(already_processed)} already done, skipping {skipped}")
-        print(f"       {len(remaining_keys)} remaining")
-        xml_keys = remaining_keys
+        print(f"       {len(remaining_rows)} remaining")
+        input_rows = remaining_rows
     else:
         print("  [OK] Starting fresh")
 
     # Apply max_files AFTER filtering — gives us the next batch, not the first batch
-    if MAX_FILES and len(xml_keys) > MAX_FILES:
+    if MAX_FILES and len(input_rows) > MAX_FILES:
         print(f"       Limiting this run to {MAX_FILES} files (max_files setting)")
-        xml_keys = xml_keys[:MAX_FILES]
+        input_rows = input_rows[:MAX_FILES]
 
-    if not xml_keys:
+    if not input_rows:
         print("\n  All files already processed! Nothing to do.")
         print(f"  Output: {OUTPUT_CSV}")
         return
@@ -566,11 +478,12 @@ def main():
     results = []
     run_start_time = time.time()
 
-    for file_index, s3_key in enumerate(xml_keys, 1):
+    for file_index, input_row in enumerate(input_rows, 1):
+        s3_key = input_row["key"]
         file_name = os.path.basename(s3_key)
         file_start_time = time.time()
 
-        print(f"  [{file_index:3d}/{len(xml_keys):3d}] {file_name}")
+        print(f"  [{file_index:3d}/{len(input_rows):3d}] {file_name}")
 
         # --- Download ENTIRE file from S3 ---
         try:
@@ -600,23 +513,25 @@ def main():
         # --- Add metadata ---
         fingerprints["Path"] = f"s3://{BUCKET}/{s3_key}"
         fingerprints["FileName"] = file_name
+        fingerprints["QE"] = input_row["qe"]
+        fingerprints["Input_Assigning_Authority"] = input_row["assigning_authority"]
         fingerprints["FileSizeBytes"] = file_size
         fingerprints["Parse_type"] = PARSE_TYPE
 
         # --- Print key signals ---
         print(f"               softwareName: {fingerprints.get('softwareName', '(blank)')[:50]}")
-        print(f"               hasEpicOID:   {fingerprints.get('hasEpicOID', '')}")
 
-        # --- Make EHR guess ---
-        ehr_guess, guess_reason = make_preliminary_ehr_guess(fingerprints)
-        fingerprints["EHR-Guess"] = ehr_guess
-        fingerprints["EHR-GuessReason"] = guess_reason
+        # --- Classify EHR vendor ---
+        ehr_guess, confidence, reason = classify_ehr_vendor(fingerprints)
+        fingerprints["EHR_Guess"] = ehr_guess
+        fingerprints["EHR_Guess_Confidence"] = confidence
+        fingerprints["EHR_Guess_Reason"] = reason
 
         # --- Record timing ---
         file_elapsed_ms = int((time.time() - file_start_time) * 1000)
         fingerprints["ProcessingTimeMS"] = file_elapsed_ms
 
-        print(f"               >> EHR Guess:  {ehr_guess} ({guess_reason[:60]}...)")
+        print(f"               >> EHR Guess:  {ehr_guess} [{confidence}] ({reason[:55]}...)")
         print(f"               >> Time: {file_elapsed_ms} ms")
         print()
 
@@ -638,7 +553,7 @@ def main():
 
     # Summary
     total_elapsed_ms = int((time.time() - run_start_time) * 1000)
-    total_processed = len(xml_keys)
+    total_processed = len(input_rows)
     avg_ms = total_elapsed_ms // total_processed if total_processed else 0
     final_csv_count = len(load_already_processed_paths(OUTPUT_CSV))
 

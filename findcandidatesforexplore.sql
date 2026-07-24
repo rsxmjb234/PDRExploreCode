@@ -84,5 +84,5 @@ SELECT
     size,
     date_format(last_modified_date, '%Y-%m-%d %H:%i:%s') AS last_modified
 FROM ranked
-WHERE rn <= 20
+WHERE rn <= 5
 ORDER BY assigning_authority ASC, data_type ASC, last_modified DESC;
