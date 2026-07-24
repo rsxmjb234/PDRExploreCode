@@ -1,129 +1,122 @@
-# PLAN: Next Code Changes (Both EntireCCD and JustTopOfFile)
+# CHANGE LOG: Code Changes Applied
 
-Check in current code first, then implement these changes.
+This document tracks all code changes made to the EHR detection scripts.
+Dan: read this to understand what changed and why.
 
 ---
 
 ## Change 1: Add QE and Assigning Authority from Input CSV
+**Status: DONE**
 
-**What:** The input CSV already has columns `qe` and `assigning_authority`.
-Currently we ignore them. We want to pass them through to the output CSV.
+**What:** The input CSV has columns `qe` and `assigning_authority`.
+We now pass them through to the output CSV so you can see them alongside
+the EHR classification results.
 
-**Where:** Both `findandsaveEHRfromCCD-EntireCCD.py` and `findandsaveEHRfromCCD-JustTopOfFile.py`
-
-**Steps:**
-1. Change `read_input_csv_file()` to return a list of dicts (not just keys)
-   containing `{"key": ..., "qe": ..., "assigning_authority": ...}`
-2. Add `"QE"` and `"Input_Assigning_Authority"` to OUTPUT_FIELDS
-   (after FileName, before ProcessingTimeMS)
-3. In the processing loop, copy those values into the fingerprints dict
-4. These come from the INPUT CSV, not from parsing the CCD
-
-**New column order:**
-```
-Path, FileName, QE, Input_Assigning_Authority, ProcessingTimeMS, FileSizeBytes, ...
-```
+**What was changed:**
+- `read_input_csv_file()` now returns a list of dicts (not just key strings)
+  containing `{"key": ..., "qe": ..., "assigning_authority": ...}`
+- Added `"QE"` and `"Input_Assigning_Authority"` to OUTPUT_FIELDS
+- Processing loop copies those values into each output row
 
 ---
 
 ## Change 2: Remove Weak Signals
+**Status: DONE**
 
-**What:** Remove these signals from extraction, OUTPUT_FIELDS, and scoring:
+**What:** Removed signals that didn't contribute meaningfully to classification:
 - `templateIds` (Template IDs from ClinicalDocument/templateId)
 - `allOIDFamilies` (OID family prefixes from all root attributes)
 - `indentStyle` (XML formatting/whitespace analysis)
 
-**Where:** Both scripts
-
-**Steps:**
-1. Remove from OUTPUT_FIELDS list
-2. Remove extraction code in `extract_all_fingerprint_signals()`
-3. Remove from scoring in `make_preliminary_ehr_guess()`
-   - Remove Signal Check 3 (standard CCD templateId)
-   - Remove Signal Check 4 (XML formatting)
-4. Remove `detect_xml_indentation_style()` function entirely
-5. Remove `from collections import Counter` import (only used by indent detection)
-
-**Columns being removed:**
-- `templateIds`
-- `allOIDFamilies`
-- `indentStyle`
+**What was removed:**
+- Columns from OUTPUT_FIELDS
+- Extraction code in `extract_all_fingerprint_signals()`
+- `detect_xml_indentation_style()` function entirely
+- `from collections import Counter` import
 
 ---
 
-## Change 3: Replace EHR-Guess with Smarter `EHR_Guess` Logic
+## Change 3: Replace EHR-Guess with Smarter Classification
+**Status: DONE**
 
-**What:** Remove the old `EHR-Guess` and `EHR-GuessReason` columns.
-Replace with a new, smarter classification:
-- `EHR_Guess` — canonical EHR vendor name
+**What:** Replaced the old weighted scoring (`make_preliminary_ehr_guess`)
+with a new function `classify_ehr_vendor()` that does explicit vendor
+pattern matching on softwareName and manufacturerModelName.
+
+**New columns:**
+- `EHR_Guess` — canonical EHR vendor name (EPIC, MEDENT, Cerner, etc.)
 - `EHR_Guess_Confidence` — High / Medium / Low
-- `EHR_Guess_Reason` — short explanation of which fields drove the guess
+- `EHR_Guess_Reason` — which fields drove the guess
 
-**Where:** Both scripts (replace `make_preliminary_ehr_guess()`)
+**Classification rules:**
+1. Check softwareName + manufacturerModelName for known vendor keywords
+2. Handle generic software names with specific manufacturers
+3. If no match => "UNKNOWN" with Low confidence
 
-**New function: `classify_ehr_vendor(fingerprints)`**
-
-**Classification rules (in priority order):**
-
-1. Normalize: lowercase, strip whitespace, treat blanks as null
-2. Check softwareName / manufacturerModelName for explicit vendor names:
-   - Contains "Epic" => EPIC
-   - "eClinicalWorks" or "eClinicalWorks CCDA" => eClinicalWorks
-   - "athenahealth" => athenahealth
-   - "MEDENT" => MEDENT
-   - "Cerner" or "Millennium" => Cerner
-   - "PointClickCare" => PointClickCare
-   - "Netsmart" or "CCD Generator" + manufacturer Netsmart => Netsmart
-   - "Practice Fusion" => Practice Fusion
-   - "NextGen" => NextGen
-   - "Greenway Intergy" => Greenway
-   - "SigmaCare" => SigmaCare
-   - "Office Practicum" => Office Practicum
-   - "MEDITECH" => MEDITECH
-   - "InterSystems" or "HealthShare" => InterSystems
-
-3. Generic software names with specific manufacturer:
-   - "Document Generation Engine" + manufacturer="athenahealth" => athenahealth
-   - "CCD Generator" + manufacturer="Netsmart" => Netsmart
-   - "Millennium Clinical Document Generator" + manufacturer="Cerner Corporation" => Cerner
-
-4. Epic OID signal:
-   - If hasEpicOID=YES AND no other vendor identified => EPIC (Medium confidence)
-   - If hasEpicOID=YES AND another vendor identified => keep that vendor,
-     note "conflicting Epic OID" in reason, set confidence to Low
-
-5. If no signal => "UNKNOWN" with Low confidence
-
-**Returns:** tuple of (ehr_guess, confidence, reason)
-
-**New columns replacing old:**
-- `EHR_Guess` (replaces `EHR-Guess`)
-- `EHR_Guess_Confidence` (new)
-- `EHR_Guess_Reason` (replaces `EHR-GuessReason`)
+**Vendors detected:**
+Epic, eClinicalWorks, athenahealth, MEDENT, Cerner, PointClickCare,
+Netsmart, Practice Fusion, NextGen, Greenway, SigmaCare, Office Practicum,
+MEDITECH, InterSystems
 
 ---
 
-## Final OUTPUT_FIELDS After All Changes
+## Change 4: Rename Assigning-Authority Column
+**Status: DONE**
+
+**What:** Renamed `"Assigning-Authority"` to `"Assigning-Authority-ParsedFromS3"`
+to clarify this value comes from parsing the CCD XML (recordTarget/patientRole/id),
+not from the input CSV.
+
+---
+
+## Change 5: Remove Epic OID Signal Entirely
+**Status: DONE**
+
+**What:** Removed `hasEpicOID` and `epicOIDsFound` columns and all related logic.
+The EHR classification is now based entirely on `softwareName` and
+`manufacturerModelName` — the OID scanning was redundant.
+
+**What was removed:**
+- `hasEpicOID` and `epicOIDsFound` from OUTPUT_FIELDS
+- All OID scanning code in `extract_all_fingerprint_signals()`
+- `EPIC_OID_FAMILY` constant
+- Epic OID fallback rule in `classify_ehr_vendor()`
+- `hasEpicOID` print statements in the processing loop
+
+---
+
+## Change 6: Fix max_files Batch Logic
+**Status: DONE**
+
+**What:** Fixed a bug where `max_files=200` would only look at the first 200
+rows from the input CSV, then say "all done" if those were already processed.
+
+**Fix:** Now reads ALL rows from the input CSV first, filters out
+already-processed files, THEN applies max_files as a cap on how many
+remaining files to process this run. This gives you the NEXT batch,
+not the first batch.
+
+---
+
+## Final OUTPUT_FIELDS (Current State)
 
 ```python
 OUTPUT_FIELDS = [
-    "Path",
-    "FileName",
-    "QE",
-    "Input_Assigning_Authority",
-    "ProcessingTimeMS",
-    "FileSizeBytes",
-    "Assigning-Authority",        # From CCD XML (recordTarget/patientRole/id)
-    "OID",
-    "softwareName",
-    "manufacturerModelName",
-    "custodianOrgName",
-    "hasEpicOID",
-    "epicOIDsFound",
-    "EHR_Guess",
-    "EHR_Guess_Confidence",
-    "EHR_Guess_Reason",
-    "Parse_type",
+    "Path",                           # Full S3 path (s3://bucket/key)
+    "FileName",                       # Just the filename
+    "QE",                             # QE from input CSV
+    "Input_Assigning_Authority",      # Assigning authority from input CSV
+    "ProcessingTimeMS",               # Time to download + extract (ms)
+    "FileSizeBytes",                  # File size downloaded
+    "Assigning-Authority-ParsedFromS3", # From CCD XML parsing
+    "OID",                            # Patient ID root OID
+    "softwareName",                   # From assignedAuthoringDevice
+    "manufacturerModelName",          # Backup software identifier
+    "custodianOrgName",               # Organization hosting/sending the CCD
+    "EHR_Guess",                      # Canonical EHR vendor name
+    "EHR_Guess_Confidence",           # High / Medium / Low
+    "EHR_Guess_Reason",               # Which fields drove the guess
+    "Parse_type",                     # "TopOnly" or "Entire"
 ]
 ```
 
@@ -131,17 +124,27 @@ OUTPUT_FIELDS = [
 
 ## Files Affected
 
-- `findandsaveEHRfromCCD-EntireCCD.py`
-- `findandsaveEHRfromCCD-JustTopOfFile.py`
-- `AnalyzeResults/MakeTableResults.sql` (update to match new columns)
+- `findandsaveEHRfromCCD-EntireCCD.py` — Full file download + XML parser version
+- `findandsaveEHRfromCCD-JustTopOfFile.py` — First 100KB + regex version
+- `AnalyzeResults/MakeTableResults.sql` — Athena table definition (updated)
 
 ---
 
-## Testing
+## How to Run
 
-After changes:
-1. Delete existing output CSVs
-2. Run JustTopOfFile with max_files=5, verify output columns
-3. Run EntireCCD with max_files=5, verify output columns match
-4. Both should produce identical column headers
-5. Spot-check EHR_Guess values against known MEDENT/Epic sources in PROD data
+1. Delete any existing output CSV (to pick up new column format)
+2. Set `ACTIVE_PROFILE = "DEV"` or `"PROD"`
+3. Set `max_files` in the DEV/PROD dict to control batch size
+4. Run: `python findandsaveEHRfromCCD-EntireCCD.py`
+   or: `python findandsaveEHRfromCCD-JustTopOfFile.py`
+5. On subsequent runs, it automatically skips already-processed files
+6. Results flush to disk every 200 records (crash protection)
+
+---
+
+## Testing Performed
+
+- JustTopOfFile: 200 DEV files, 157ms avg per record
+- EntireCCD: 3 DEV files, 343ms avg per record
+- Both produce identical column headers
+- Restart logic confirmed working (skips done files, processes next batch)
