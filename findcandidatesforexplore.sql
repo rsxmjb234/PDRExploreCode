@@ -1,13 +1,16 @@
 /*
-findcandidatesforexplore.sql — Get 10 random CCD S3 paths per assigning authority
+findcandidatesforexplore.sql — Get 5 random CCD S3 paths per assigning authority
 
-Based on Dan's SQL from danemail.md with these changes:
-  1. Include backload paths (removed the backload exclusion)
-  2. Handle all path prefixes (processed/error/backload/normal) for AA derivation
-  3. CCD only (removed TRN/ORU)
-  4. Hardcoded to Jul 21-22
+Based on Dan's SQL with these additions:
+  1. Includes ALL path types (normal, processed, error, backload)
+  2. Handles all path prefixes for AA derivation
+  3. CCD only
+  4. 10-day window (Jul 15-24) to catch intermittent/backlog sources
+  5. 5 random samples per assigning authority
 
-Output feeds into findandsaveEHRfromCCD-EntireCCD.py
+Output columns: assigning_authority, qe, bucket, key, size, last_modified
+  - These match what findandsaveEHRfromCCD-EntireCCD.py expects via read_input_csv_file()
+  - Export this from Athena as CSV, then feed it to the Python script
 */
 
 WITH ranked AS (

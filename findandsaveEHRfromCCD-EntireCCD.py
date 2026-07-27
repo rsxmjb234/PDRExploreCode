@@ -5,30 +5,22 @@ findandsaveEHRfromCCD-EntireCCD.py — Classify Data Sources by EHR Vendor
 ================================================================================
 GOAL
 ================================================================================
-Determine which EHR system (Epic, Cerner, MEDITECH, etc.) is behind each data
-source (Assigning Authority) by analyzing structural fingerprints within CCD
-(Continuity of Care Document) files.
+Determine which EHR system (Epic, Cerner, MEDITECH, Synthea, etc.) is behind
+each data source (Assigning Authority) by analyzing structural fingerprints
+within CCD (Continuity of Care Document) files.
 
 This is the FULL FILE version. It downloads the entire CCD and uses a proper
-XML parser (ElementTree) to extract signals. This is more versatile and
-accurate than the regex-based partial-download approach.
-
-COMPARISON TO findandsaveEHRfromCCD-JustTopOfFile.py:
-  - JustTopOfFile: Downloads first 100KB, uses regex. Faster, less versatile.
-  - EntireCCD (this file): Downloads full file, uses XML parser. Slower, more
-    accurate, can access signals anywhere in the document.
-
-Run both against the same 2000 files to compare real-world speed and accuracy.
+XML parser (ElementTree) to extract signals.
 
 
 ================================================================================
 STRATEGY
 ================================================================================
-1. Read a list of CCD S3 paths from an input CSV
+1. Read a list of CCD S3 paths from an input CSV (with bucket per row)
 2. Download the ENTIRE CCD from S3 (full file, could be 1-10MB+)
-3. Parse the XML with ElementTree and extract signals using XPath
-4. Write all raw signals to an output CSV for downstream analysis
-5. Optionally make a preliminary EHR guess (EPIC / NOT-EPIC / NOT SURE)
+3. Parse the XML with ElementTree and extract softwareName + manufacturerModelName
+4. Classify the EHR vendor using pattern matching on those fields
+5. Write results to an output CSV
 
 
 ================================================================================
@@ -45,25 +37,20 @@ HOW IT WORKS:
   3. Every 200 records, we flush results to disk (append to CSV).
   4. If the script crashes, you lose at most ~200 records of work.
   5. On the next run, it picks up where it left off automatically.
-
-PERFORMANCE NOTE:
-  Loading 100K paths into a Python set uses ~12MB of RAM and takes ~1-2 seconds.
-  The set lookup is O(1) per file. This scales without issue.
+  6. max_files is applied AFTER filtering, so each run processes the NEXT
+     batch, not the first batch.
 
 TO RE-PROCESS EVERYTHING FROM SCRATCH:
   Delete the output CSV file (or rename it) and run again.
 
-TO RE-PROCESS SPECIFIC FILES:
-  Delete those rows from the output CSV and run again.
-
 
 ================================================================================
-SIGNALS WE EXTRACT (from businessidea-rules.html)
+SIGNALS WE EXTRACT
 ================================================================================
 
 1. Software Name
    Where: assignedAuthoringDevice/softwareName
-   What:  Often directly states "Epic" or "EpicCare"
+   What:  Often directly states the vendor (e.g., "Epic", "MEDENT", "Synthea")
 
 2. Manufacturer Model Name
    Where: assignedAuthoringDevice/manufacturerModelName
@@ -71,38 +58,35 @@ SIGNALS WE EXTRACT (from businessidea-rules.html)
 
 3. Custodian Organization Name
    Where: custodian/.../representedCustodianOrganization/name
-   What:  The organization hosting/sending the CCD
+   What:  The organization hosting/sending the CCD (context, not used in guess)
 
-4. Template IDs
-   Where: ClinicalDocument/templateId elements
-   What:  OIDs declaring conformance to CDA standards
 
-5. OID Families
-   Where: Every id/@root attribute throughout the ENTIRE document
-   What:  Epic is assigned OID family 1.2.840.114350
+================================================================================
+EHR CLASSIFICATION LOGIC
+================================================================================
+We match softwareName + manufacturerModelName against known vendor patterns:
+  Synthea, Epic, eClinicalWorks, athenahealth, MEDENT, Cerner, PointClickCare,
+  Netsmart, Practice Fusion, NextGen, Greenway, SigmaCare, Office Practicum,
+  MEDITECH, InterSystems
 
-6. Formatting Style
-   Where: Whitespace/indentation in the XML
-   What:  Epic's serializers produce consistent 2-space indentation
+If no pattern matches => "UNKNOWN" with Low confidence.
 
 
 ================================================================================
 INPUT / OUTPUT
 ================================================================================
 
-INPUT CSV:
-  - Must have at least a "key" column with S3 object paths
-  - Typically produced by:
-    * makelistofdevdocsfollowingprodcsvformat.py (DEV)
-    * Athena query export (PROD)
+INPUT CSV (from findcandidatesforexplore.sql or DEV-makelistofdevdocsfollowingprodcsvformat.py):
+  Required columns: "bucket", "key"
+  Optional columns: "qe", "assigning_authority"
+  PROD: Each row specifies its own bucket (multi-bucket support)
+  DEV: Can use a default_bucket if CSV omits bucket column
 
 OUTPUT CSV:
-  - One row per input document
-  - Contains extracted signals plus filename, full S3 path, assigning authority
-  - Includes processing time per record (POC diagnostics)
-  - Full S3 path in each row so you know what's done vs. what's left
-  - Output files are named differently from JustTopOfFile version so both
-    can run against the same input without collision
+  One row per document with: Path, FileName, QE, Input_Assigning_Authority,
+  ProcessingTimeMS, FileSizeBytes, Assigning-Authority-ParsedFromS3, OID,
+  softwareName, manufacturerModelName, custodianOrgName,
+  EHR_Guess, EHR_Guess_Confidence, EHR_Guess_Reason, Parse_type
 
 
 ================================================================================
@@ -133,7 +117,7 @@ DEV = {
     "aws_profile": "student1",
     "default_bucket": "nyec.ccda.learning",
     "allowed_buckets": ["nyec.ccda.learning"],
-    "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
+    "input_csv": "DEV-CandidateS3PathsForEvaluation.csv",
     "output_csv": "DEV-EHR_Software_Names_EntireCCD.csv",
     "max_files": 2000,
 }
@@ -421,6 +405,7 @@ def classify_ehr_vendor(fingerprints):
     
     # --- Rule 2: Explicit EHR product/vendor signals ---
     vendor_patterns = [
+        ("synthea", "Synthea"),
         ("epic", "EPIC"),
         ("eclinicalworks", "eClinicalWorks"),
         ("athenahealth", "athenahealth"),

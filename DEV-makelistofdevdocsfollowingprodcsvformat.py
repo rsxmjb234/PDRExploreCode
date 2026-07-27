@@ -1,14 +1,14 @@
 """
-makelistofdevdocsfollowingprodcsvformat.py
+DEV-makelistofdevdocsfollowingprodcsvformat.py
 
 Lists up to 2000 XML files from the DEV S3 bucket and writes them
-to a CSV that mirrors the PROD Athena export format:
+to a CSV that mirrors the PROD Athena export format
+(output of findcandidatesforexplore.sql):
 
-    assigning_authority, qe, data_type, bucket, key, size, last_modified
+    assigning_authority, qe, bucket, key, size, last_modified
 
-This matches Dan's SQL output (SQLCandidates.SQL) so that
-findandsaveEHRfromCCD-EntireCCD.py can process DEV and PROD CSVs
-using the same read_input_csv_file() logic.
+This allows findandsaveEHRfromCCD-EntireCCD.py to process DEV and PROD CSVs
+using the same read_input_csv_file() logic — no code changes needed.
 
 Key columns the processing script needs:
   - "bucket" — which S3 bucket the file is in
@@ -16,8 +16,11 @@ Key columns the processing script needs:
   - "qe" — QE name (optional, for context)
   - "assigning_authority" — source system ID (optional, for context)
 
-In PROD: Dan's Athena query produces this CSV from S3 inventory.
-In DEV: We scan S3 directly and build the same format by hand.
+In PROD: findcandidatesforexplore.sql produces this CSV from Athena/S3 inventory.
+In DEV: This script scans S3 directly and builds the same format by hand.
+
+Note: DEV data is all Synthea (synthetic). The EHR classifier will tag
+everything as "Synthea" — that's correct behavior for test data.
 """
 
 import boto3
@@ -28,10 +31,10 @@ import os
 BUCKET = "nyec.ccda.learning"
 PREFIX = "RawCCDs/"
 PROFILE = "student1"
-MAX_FILES = 2000
+MAX_FILES = 5000
 OUTPUT_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "DEV-upto2000documentsfromdevbucket.csv"
+    "DEV-CandidateS3PathsForEvaluation.csv"
 )
 
 
@@ -59,15 +62,14 @@ def main():
 
     print(f"Found {len(xml_files)} XML files.")
 
-    # Write CSV matching Dan's PROD Athena export format
-    # Columns: assigning_authority, qe, data_type, bucket, key, size, last_modified
+    # Write CSV matching PROD Athena export format (findcandidatesforexplore.sql output)
+    # Columns: assigning_authority, qe, bucket, key, size, last_modified
     print(f"Writing to: {OUTPUT_CSV}")
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow([
             "assigning_authority",
             "qe",
-            "data_type",
             "bucket",
             "key",
             "size",
@@ -78,7 +80,6 @@ def main():
             writer.writerow([
                 "(dev)",           # assigning_authority — placeholder for DEV
                 "(dev)",           # qe — placeholder for DEV
-                "CCD",             # data_type
                 BUCKET,            # bucket — required by read_input_csv_file()
                 item["key"],       # key — S3 object path
                 item["size"],      # size
