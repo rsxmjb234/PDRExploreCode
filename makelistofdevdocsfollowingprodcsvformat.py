@@ -2,16 +2,22 @@
 makelistofdevdocsfollowingprodcsvformat.py
 
 Lists up to 2000 XML files from the DEV S3 bucket and writes them
-to a CSV that mirrors the PROD format:
+to a CSV that mirrors the PROD Athena export format:
 
-    assigning_authority, qe, data_type, key, size, last_modified
+    assigning_authority, qe, data_type, bucket, key, size, last_modified
 
-This allows findandsaveEHRfromCCD.py to be driven from the same
-CSV format whether in DEV or PROD.
+This matches Dan's SQL output (SQLCandidates.SQL) so that
+findandsaveEHRfromCCD-EntireCCD.py can process DEV and PROD CSVs
+using the same read_input_csv_file() logic.
 
-In PROD this is done with a SQL query, because in PROD we have S3 inventory
-In DEV we don't have S3 inventory so we just scan the S3 by hand , loop through and make a CSV
+Key columns the processing script needs:
+  - "bucket" — which S3 bucket the file is in
+  - "key" — the S3 object key (path within bucket)
+  - "qe" — QE name (optional, for context)
+  - "assigning_authority" — source system ID (optional, for context)
 
+In PROD: Dan's Athena query produces this CSV from S3 inventory.
+In DEV: We scan S3 directly and build the same format by hand.
 """
 
 import boto3
@@ -53,32 +59,34 @@ def main():
 
     print(f"Found {len(xml_files)} XML files.")
 
-    # Write CSV in the same format as the PROD file
+    # Write CSV matching Dan's PROD Athena export format
+    # Columns: assigning_authority, qe, data_type, bucket, key, size, last_modified
     print(f"Writing to: {OUTPUT_CSV}")
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["assigning_authority", "qe", "data_type", "key", "size", "last_modified"])
+        writer.writerow([
+            "assigning_authority",
+            "qe",
+            "data_type",
+            "bucket",
+            "key",
+            "size",
+            "last_modified",
+        ])
 
         for item in xml_files:
-            key = item["key"]
-            # In DEV, we don't have the same path structure as PROD,
-            # so we derive what we can:
-            #   assigning_authority = "(dev)" placeholder
-            #   qe = "(dev)" placeholder
-            #   data_type = "CCD"
-            #   key = the S3 key (relative to bucket, same as PROD)
-            #   size = file size
-            #   last_modified = timestamp
             writer.writerow([
-                "(dev)",       # assigning_authority - unknown until we parse the XML
-                "(dev)",       # qe - unknown until we parse the XML
-                "CCD",         # data_type
-                key,           # full S3 key
-                item["size"],
-                item["last_modified"],
+                "(dev)",           # assigning_authority — placeholder for DEV
+                "(dev)",           # qe — placeholder for DEV
+                "CCD",             # data_type
+                BUCKET,            # bucket — required by read_input_csv_file()
+                item["key"],       # key — S3 object path
+                item["size"],      # size
+                item["last_modified"],  # last_modified
             ])
 
     print(f"Done! Wrote {len(xml_files)} rows.")
+    print(f"  Format matches PROD Athena export (has 'bucket' column)")
 
 
 if __name__ == "__main__":
