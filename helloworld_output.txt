@@ -1,0 +1,2 @@
+s3_path: s3://nyec.ccda.learning/RawCCDs/Aaron697_Schiller186_d5d96071-fdff-d902-f487-de1a278fd864.xml
+oid: 2.16.840.1.113883.19.5

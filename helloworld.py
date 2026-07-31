@@ -22,7 +22,7 @@ DEV = {
 
 # PROD config
 PROD = {
-    "aws_profile": "dan-prod",
+    "aws_profile": "default",
     "bucket": "nyec-pdr-prod-hixny",
     "key": "1003861782/ccd/2026/Jul/06/15/hixny_1003861782_59041906c701c0a83ac4ca3781382549a9569358a4bddab470f413fef9fb56a7_2.16.840.1.113883.3.227.3245.1.1.c1be4578.xml",
 }

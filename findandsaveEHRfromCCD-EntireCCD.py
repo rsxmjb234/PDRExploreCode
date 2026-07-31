@@ -3,6 +3,10 @@ findandsaveEHRfromCCD-EntireCCD.py — Classify Data Sources by EHR Vendor
                                      (FULL FILE DOWNLOAD + XML PARSER)
 
 ================================================================================
+Hi Dan - updated 07.31.2026
+================================================================================
+
+================================================================================
 GOAL
 ================================================================================
 Determine which EHR system (Epic, Cerner, MEDITECH, Synthea, etc.) is behind
@@ -165,6 +169,12 @@ ALLOWED_BUCKETS = set(config.get("allowed_buckets", []))
 INPUT_CSV_FILENAME = config["input_csv"]
 OUTPUT_CSV_FILENAME = config["output_csv"]
 MAX_FILES = config["max_files"]
+
+# Add today's date to output filename: e.g., "PROD-EHR_Software_Names_EntireCCD_07-08-2026.csv"
+from datetime import datetime
+_date_stamp = datetime.now().strftime("%m-%d-%Y")
+_base, _ext = os.path.splitext(OUTPUT_CSV_FILENAME)
+OUTPUT_CSV_FILENAME = f"{_base}_{_date_stamp}{_ext}"
 
 INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), INPUT_CSV_FILENAME)
 OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_CSV_FILENAME)
