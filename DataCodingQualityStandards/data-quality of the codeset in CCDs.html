@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explore — Code Quality: National Standards vs Local Codes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(145deg, #f5ede0 0%, #efe3cd 55%, #e6d0a9 100%);
+            margin: 0;
+            color: #2f2218;
+        }
+        header {
+            background: linear-gradient(130deg, #3d2b1f 0%, #6a4524 100%);
+            color: #fff;
+            padding: 2.2rem 1.2rem 1.4rem;
+            text-align: center;
+        }
+        header h1 {
+            margin: 0;
+            color: #f7d27d;
+            font-size: 1.9em;
+            letter-spacing: -0.3px;
+        }
+        header p {
+            margin: 0.65rem auto 0;
+            max-width: 860px;
+            color: #e6cfaa;
+            line-height: 1.65;
+            font-size: 1.02em;
+        }
+        .back-link {
+            display: inline-block;
+            margin: 1.2rem 0 0 1.2rem;
+            background: rgba(184,127,42,0.14);
+            color: #6f4b0f;
+            text-decoration: none;
+            border-radius: 999px;
+            border: 1px solid rgba(184,127,42,0.35);
+            padding: 0.42em 0.95em;
+            font-size: 0.88em;
+            font-weight: 700;
+        }
+        .wrap {
+            max-width: 1020px;
+            margin: 1.2rem auto 2.4rem;
+            padding: 0 1.2rem;
+        }
+        .panel {
+            background: #fffdf8;
+            border-radius: 1rem;
+            box-shadow: 0 8px 26px rgba(61, 43, 31, 0.12);
+            border-top: 5px solid #c8a84b;
+            padding: 1.25rem 1.35rem;
+            margin-bottom: 1rem;
+        }
+        .panel h2 {
+            margin: 0 0 0.6rem;
+            font-size: 1.16em;
+            color: #3d2b1f;
+        }
+        .panel h3 {
+            margin: 0.9rem 0 0.4rem;
+            font-size: 1em;
+            color: #5c3a1e;
+        }
+        .panel p, .panel li {
+            color: #4b3a2c;
+            line-height: 1.7;
+            font-size: 0.96em;
+        }
+        .panel ul, .panel ol {
+            margin: 0.4rem 0 0.6rem 1.2rem;
+            padding: 0;
+        }
+        .panel li { margin-bottom: 0.35em; }
+        pre {
+            margin: 0.4rem 0 0;
+            background: #2a1d13;
+            color: #f9f0df;
+            border-radius: 0.7rem;
+            padding: 0.95rem 1rem;
+            overflow-x: auto;
+            font-size: 0.85em;
+            line-height: 1.55;
+        }
+        code { font-family: Consolas, 'Courier New', monospace; }
+        .inline-code {
+            background: #f3ead8;
+            border: 1px solid #dbc8a4;
+            border-radius: 0.3em;
+            padding: 0.12em 0.45em;
+            font-size: 0.9em;
+            font-family: Consolas, 'Courier New', monospace;
+        }
+        .note {
+            margin-top: 0.7rem;
+            background: #fef3d0;
+            border-left: 4px solid #c8a84b;
+            border-radius: 0.5rem;
+            padding: 0.62rem 0.8rem;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        .warn {
+            margin-top: 0.7rem;
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            border-radius: 0.5rem;
+            padding: 0.62rem 0.8rem;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        .kpi {
+            display: grid;
+            gap: 0.65rem;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            margin-top: 0.4rem;
+        }
+        .kpi .item {
+            background: #fff7de;
+            border: 1px solid #e9ca82;
+            border-radius: 0.7rem;
+            padding: 0.72rem 0.8rem;
+        }
+        .kpi .label {
+            font-size: 0.74em;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: #815b1d;
+            font-weight: 700;
+        }
+        .kpi .value {
+            margin-top: 0.3rem;
+            font-size: 0.87em;
+            color: #433224;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86em;
+            margin-top: 0.5rem;
+        }
+        th, td {
+            border: 1px solid #e6d9c4;
+            padding: 0.5em 0.65em;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: #f9f1e2;
+            font-weight: 700;
+            color: #3d2b1f;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td { color: #4b3a2c; }
+        .workflow-step {
+            display: flex;
+            gap: 0.8rem;
+            align-items: flex-start;
+            margin-bottom: 0.7rem;
+        }
+        .step-num {
+            flex-shrink: 0;
+            width: 1.7rem;
+            height: 1.7rem;
+            background: #5c3a1e;
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.82em;
+        }
+        .step-content { flex: 1; }
+        .step-content strong { color: #3d2b1f; }
+        .tag-standard {
+            display: inline-block;
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .tag-local {
+            display: inline-block;
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .tag-missing {
+            display: inline-block;
+            background: #f3f4f6;
+            color: #4b5563;
+            border: 1px solid #d1d5db;
+            border-radius: 999px;
+            padding: 0.1em 0.6em;
+            font-size: 0.82em;
+            font-weight: 700;
+        }
+        .footer {
+            text-align: center;
+            color: #b09060;
+            margin: 2rem 0 1rem 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Code Quality: National Standards vs Local Codes</h1>
+    <p>For elements where we expect national coding standards (labs, procedures, diagnoses, medications),
+       how often is the data actually coded to a recognized standard — and how often is it local or proprietary?
+       Measured per source using 200 CCDs each.</p>
+</header>
+
+<a class="back-link" href="explore.html">&#8592; Back to Explore</a>
+
+<div class="wrap">
+
+    <!-- Question -->
+    <section class="panel">
+        <h2>Question</h2>
+        <p>
+            CCD clinical entries are <em>supposed</em> to carry nationally recognized codes: LOINC for labs,
+            CPT/SNOMED for procedures, ICD-10/SNOMED-CT for diagnoses, RxNorm/NDC for medications. In reality,
+            many source systems send local, proprietary, or facility-specific codes instead — sometimes with a
+            standard code alongside, sometimes exclusively.
+        </p>
+        <p>
+            <strong>For each source, what percentage of coded elements use a national standard vs. a local code?</strong>
+            This directly determines how much mapping or tolerance logic is needed when building Silver tables.
+        </p>
+    </section>
+
+    <!-- Why This Matters -->
+    <section class="panel">
+        <h2>Why This Matters</h2>
+        <ul>
+            <li><strong>Silver parsing complexity:</strong> Sources that are well-coded to national standards can
+                be parsed with generic rules. Sources heavy on local codes need custom mapping tables or fallback
+                logic — which is expensive to build and maintain.</li>
+            <li><strong>Interoperability assessment:</strong> A source sending 90% local codes is effectively
+                non-interoperable at the coded level, even if the XML structure is valid C-CDA.</li>
+            <li><strong>Prioritization:</strong> Knowing which sources are well-coded helps prioritize which
+                ones to onboard first to Silver — quick wins vs. heavy lifts.</li>
+            <li><strong>Vendor conversations:</strong> Data showing "your lab results are 80% local codes" is
+                a concrete artifact for requesting better coding from a source system.</li>
+        </ul>
+    </section>
+
+    <!-- End in Writing -->
+    <section class="panel">
+        <h2>End in Writing: The Code-Set Review Matrix</h2>
+        <p>The deliverable for this exploration is a <strong>source × domain matrix</strong> where each cell
+           is classified as "well-coded", "Poorly Coded", or "Missing Data" — answering at a glance which
+           sources are ready for Silver and which need work. Each domain column maps to a known national
+           code system:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Assigning Authority</th>
+                    <th>Demographics<br><span style="font-weight:400;font-size:0.8em;">HL7 admin + CDCREC</span></th>
+                    <th>Labs / Results<br><span style="font-weight:400;font-size:0.8em;">LOINC + UCUM</span></th>
+                    <th>Procedures<br><span style="font-weight:400;font-size:0.8em;">SNOMED CT / CPT / ICD-10-PCS</span></th>
+                    <th>Problems<br><span style="font-weight:400;font-size:0.8em;">SNOMED CT / ICD-10-CM</span></th>
+                    <th>Medications<br><span style="font-weight:400;font-size:0.8em;">RxNorm</span></th>
+                    <th>Allergies<br><span style="font-weight:400;font-size:0.8em;">RxNorm/UNII + SNOMED CT</span></th>
+                    <th>Immunizations<br><span style="font-weight:400;font-size:0.8em;">CVX / MVX</span></th>
+                    <th>Vitals<br><span style="font-weight:400;font-size:0.8em;">LOINC + UCUM</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>ASSOC FOR MENTAL HEALTH AND WELLNESS</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><em>review</em></td>
+                    <td><em>review</em></td>
+                    <td><em>review</em></td>
+                    <td><em>review</em></td>
+                    <td><em>review</em></td>
+                </tr>
+                <tr>
+                    <td>GUTHRIE</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                </tr>
+                <tr>
+                    <td>NYUMC</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                </tr>
+                <tr>
+                    <td>MMC</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                </tr>
+                <tr>
+                    <td>IFH</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                </tr>
+                <tr>
+                    <td>ENT-ALLERGY</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                </tr>
+                <tr>
+                    <td>UBMD</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-missing">Missing Data</span></td>
+                </tr>
+                <tr>
+                    <td>WELNOW</td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-local">Poorly Coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                    <td><span class="tag-standard">well-coded</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="note">
+            <strong>Four-state classification per cell:</strong>
+            <span class="tag-standard">well-coded</span> = the CCD carries the expected national code system for that domain.
+            <span class="tag-local">Poorly Coded</span> = data exists but uses local/proprietary codes instead of the expected standard.
+            <span class="tag-missing">Missing Data</span> = code elements present but @code or @codeSystem is empty/unusable.
+            <strong>Section Absent</strong> = the entire CDA section does not exist in the CCD (the source never sent it — may be legitimately out of scope for that provider type, or may indicate a configuration gap).
+        </div>
+
+        <p style="margin-top:0.8rem;">
+            <strong>&#128196; Full working spreadsheet:</strong>
+            <a href="https://nyehealth-my.sharepoint.com/:x:/g/personal/mberger_nyehealth_org/IQB_Wf_7YvZ9TKnqgUUj8OU-ASHFmVL3md7-UdVPqNF0kqI?e=3oZt7v"
+               target="_blank" rel="noopener noreferrer"
+               style="color:#5c3a1e;font-weight:700;text-decoration:underline;">
+               Example end in mind for coding we see in CCDs.xlsx</a>
+            — contains the full matrix plus detailed review targets per domain with example data elements,
+            expected code systems, and rationale for why each qualifies.
+        </p>
+    </section>
+
+    <!-- What Counts as Standard vs Local -->
+    <section class="panel">
+        <h2>What Counts as "Standard" vs "Local"</h2>
+        <p>The classification is based on the <code class="inline-code">codeSystem</code> OID attached to each
+           coded element in the CCD. Recognized national code system OIDs:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Code System</th>
+                    <th>OID</th>
+                    <th>Expected In</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>LOINC</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.1</code></td>
+                    <td>Labs (Results), Vital Signs</td>
+                </tr>
+                <tr>
+                    <td>SNOMED-CT</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.96</code></td>
+                    <td>Problems, Procedures, Allergies</td>
+                </tr>
+                <tr>
+                    <td>ICD-10-CM</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.90</code></td>
+                    <td>Problems, Encounter Diagnoses</td>
+                </tr>
+                <tr>
+                    <td>CPT-4</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.12</code></td>
+                    <td>Procedures</td>
+                </tr>
+                <tr>
+                    <td>HCPCS</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.285</code></td>
+                    <td>Procedures, DME</td>
+                </tr>
+                <tr>
+                    <td>RxNorm</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.88</code></td>
+                    <td>Medications</td>
+                </tr>
+                <tr>
+                    <td>NDC</td>
+                    <td><code class="inline-code">2.16.840.1.113883.6.69</code></td>
+                    <td>Medications</td>
+                </tr>
+                <tr>
+                    <td>CVX</td>
+                    <td><code class="inline-code">2.16.840.1.113883.12.292</code></td>
+                    <td>Immunizations</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Classification logic per coded element</h3>
+        <ul>
+            <li><span class="tag-standard">Standard</span> — The <code class="inline-code">code/@codeSystem</code>
+                matches a recognized national OID from the table above.</li>
+            <li><span class="tag-local">Local</span> — The <code class="inline-code">code/@codeSystem</code> is
+                present but does not match any recognized national OID. This includes facility OIDs, vendor-internal
+                OIDs, and unregistered code systems.</li>
+            <li><span class="tag-missing">Missing</span> — No <code class="inline-code">code</code> element,
+                or code element present but <code class="inline-code">@code</code> or <code class="inline-code">@codeSystem</code>
+                is empty/absent. The element relies solely on <code class="inline-code">originalText</code> or
+                <code class="inline-code">translation</code> elements.</li>
+        </ul>
+
+        <div class="note">
+            <strong>Translation elements:</strong> Some sources put a local code as the primary and a standard code
+            in a <code class="inline-code">&lt;translation&gt;</code> element (or vice versa). The exploration checks
+            <em>both</em> and classifies an element as "Standard" if <em>any</em> code in the entry (primary or
+            translation) carries a national OID. This gives sources credit for providing a standard code even if
+            it's not the primary.
+        </div>
+    </section>
+
+    <!-- Sampling Strategy -->
+    <section class="panel">
+        <h2>Sampling Strategy</h2>
+        <div class="kpi">
+            <div class="item">
+                <div class="label">Documents per Source</div>
+                <div class="value">20 CCDs (randomly sampled; run multiple batches if needed)</div>
+            </div>
+            <div class="item">
+                <div class="label">Time Window</div>
+                <div class="value">Recent 7–14 days</div>
+            </div>
+            <div class="item">
+                <div class="label">Grouping Key</div>
+                <div class="value">Assigning Authority (source system)</div>
+            </div>
+            <div class="item">
+                <div class="label">Domains Inspected</div>
+                <div class="value">Labs, Procedures, Problems, Medications, Immunizations, Encounters</div>
+            </div>
+        </div>
+        <p style="margin-top: 0.8rem;">
+            20 documents per source is sufficient for an initial pass because coding practices are a property
+            of the <em>source system configuration</em>, not individual patient records. If a source sends
+            local LOINC codes for labs, it does so consistently across all patients. Run multiple batches
+            (leveraging the restart capability) if you need higher statistical confidence.
+        </p>
+    </section>
+
+    <!-- Workflow -->
+    <section class="panel">
+        <h2>Workflow</h2>
+
+        <div class="workflow-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <strong>List all Assigning Authorities</strong> — pull distinct source identifiers from the
+                FHIR Document Reference index or S3 inventory for the target period.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <strong>Sample 20 CCDs per source</strong> — randomly select from documents received in
+                the window. If a source contributed fewer than 20 docs, use all available and note reduced
+                sample size. Run additional batches using restart capability if more confidence needed.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <strong>Parse and extract coded elements</strong> — for each CCD, walk the clinical sections
+                (labs, procedures, problems, medications, immunizations, encounters). For each entry, extract
+                the primary <code class="inline-code">code/@code</code>, <code class="inline-code">code/@codeSystem</code>,
+                and any <code class="inline-code">translation</code> elements.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+                <strong>Classify each coded element</strong> — compare the codeSystem OID against the known
+                national standards list. Tag each as <span class="tag-standard">Standard</span>,
+                <span class="tag-local">Local</span>, or <span class="tag-missing">Missing</span>.
+                If a translation element carries a standard code, promote the element to Standard.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+                <strong>Aggregate by source and domain</strong> — for each Assigning Authority, compute:
+                total coded elements, % standard, % local, % missing — broken down by clinical domain
+                (labs, procedures, problems, medications, immunizations, encounters).
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">6</div>
+            <div class="step-content">
+                <strong>Identify the local code systems</strong> — for elements classified as "local", collect
+                the distinct OIDs used. Report the most common local OIDs per source — these are the systems
+                that would need mapping tables if you want to normalize.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">7</div>
+            <div class="step-content">
+                <strong>Output report</strong> — one row per source with overall and per-domain code quality
+                scores. Rank sources from best-coded to worst-coded.
+            </div>
+        </div>
+    </section>
+
+    <!-- Example Output -->
+    <section class="panel">
+        <h2>Example Output</h2>
+        <pre><code>{
+  "run_date": "2026-06-30",
+  "window": { "start": "2026-06-20", "end": "2026-06-27" },
+  "sources_evaluated": 42,
+  "total_coded_elements_inspected": 847300,
+  "overall": {
+    "standard_pct": 68.4,
+    "local_pct": 24.1,
+    "missing_pct": 7.5
+  },
+  "by_source": [
+    {
+      "assigning_authority": "1.2.840.114350.1.13.297.2.7.8.688883",
+      "display_name": "Strong Memorial Hospital",
+      "docs_sampled": 200,
+      "total_elements": 28400,
+      "overall_standard_pct": 94.1,
+      "overall_local_pct": 3.2,
+      "overall_missing_pct": 2.7,
+      "by_domain": {
+        "labs": { "standard_pct": 97.8, "local_pct": 1.4, "missing_pct": 0.8 },
+        "procedures": { "standard_pct": 91.2, "local_pct": 5.6, "missing_pct": 3.2 },
+        "problems": { "standard_pct": 96.5, "local_pct": 2.1, "missing_pct": 1.4 },
+        "medications": { "standard_pct": 89.3, "local_pct": 4.8, "missing_pct": 5.9 },
+        "immunizations": { "standard_pct": 98.1, "local_pct": 0.9, "missing_pct": 1.0 }
+      },
+      "top_local_oids": [
+        { "oid": "1.2.840.114350.1.72.1", "count": 412, "domain": "procedures" }
+      ]
+    },
+    {
+      "assigning_authority": "2.16.840.1.113883.3.117.1.1.5.1.1",
+      "display_name": "Community Health Network",
+      "docs_sampled": 200,
+      "total_elements": 19200,
+      "overall_standard_pct": 41.3,
+      "overall_local_pct": 48.9,
+      "overall_missing_pct": 9.8,
+      "by_domain": {
+        "labs": { "standard_pct": 22.1, "local_pct": 71.4, "missing_pct": 6.5 },
+        "procedures": { "standard_pct": 38.7, "local_pct": 52.1, "missing_pct": 9.2 },
+        "problems": { "standard_pct": 76.4, "local_pct": 18.3, "missing_pct": 5.3 },
+        "medications": { "standard_pct": 55.2, "local_pct": 34.6, "missing_pct": 10.2 },
+        "immunizations": { "standard_pct": 61.0, "local_pct": 28.5, "missing_pct": 10.5 }
+      },
+      "top_local_oids": [
+        { "oid": "2.16.840.1.113883.3.117.1.72.4", "count": 4820, "domain": "labs" },
+        { "oid": "2.16.840.1.113883.3.117.1.72.9", "count": 2140, "domain": "procedures" }
+      ]
+    }
+  ]
+}</code></pre>
+    </section>
+
+    <!-- Common Patterns -->
+    <section class="panel">
+        <h2>Common Patterns You'll See</h2>
+
+        <h3>Pattern 1: Well-coded source (EPIC, large academic centers)</h3>
+        <p>90%+ standard codes across all domains. Local codes are rare and usually limited to
+           internal order identifiers that supplement (not replace) the LOINC/SNOMED code.</p>
+
+        <h3>Pattern 2: Partially coded (Cerner, some community hospitals)</h3>
+        <p>Problems and medications are reasonably well-coded (70-85% standard), but labs carry
+           local order codes as the primary identifier. LOINC may appear in a translation element
+           or not at all.</p>
+
+        <h3>Pattern 3: Heavily local (older MEDITECH, small practices, some interfaces)</h3>
+        <p>50%+ local codes, especially in labs and procedures. The source system stores internal
+           codes and the interface engine doesn't map them. Sometimes the
+           <code class="inline-code">originalText</code> has a readable name but no standard code.</p>
+
+        <h3>Pattern 4: Missing codes (interface engine artifacts)</h3>
+        <p>High "missing" rates often indicate a middleware or interface engine that strips or fails
+           to populate the code element. The data may exist in the source EHR but isn't making it
+           into the CCD.</p>
+
+        <div class="note">
+            <strong>Labs are typically the worst.</strong> Lab ordering systems often use local catalog numbers
+            (e.g., "LAB1234") as the primary code. LOINC mapping is maintained separately and not always applied
+            to the outbound CCD. Procedures and problems tend to be better because ICD-10 and CPT are required
+            for billing and therefore already present in the source system.
+        </div>
+    </section>
+
+    <!-- Interpreting Results -->
+    <section class="panel">
+        <h2>Interpreting Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Standard %</th>
+                    <th>Assessment</th>
+                    <th>Implication for Silver</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>&ge;90%</td>
+                    <td><span class="tag-standard">Well-coded</span></td>
+                    <td>Generic parsing rules work. Minimal custom mapping needed. Good candidate for early Silver onboarding.</td>
+                </tr>
+                <tr>
+                    <td>60–89%</td>
+                    <td><span class="tag-local">Mixed</span></td>
+                    <td>Standard codes available for most elements but local codes appear in specific domains
+                        (often labs). Will need per-domain mapping tables for the local portion.</td>
+                </tr>
+                <tr>
+                    <td>&lt;60%</td>
+                    <td><span class="tag-local">Heavily local</span></td>
+                    <td>Majority of coded data uses proprietary identifiers. Parsing requires extensive
+                        mapping tables or tolerance for unresolved codes. Higher cost to onboard to Silver.</td>
+                </tr>
+                <tr>
+                    <td>High missing %</td>
+                    <td><span class="tag-missing">Structural gap</span></td>
+                    <td>Data may exist in the source but isn't flowing into CCDs. Investigate whether the
+                        interface configuration can be improved before building workarounds.</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Run It -->
+    <section class="panel">
+        <h2>Run It</h2>
+        <p>Use the exploration utility against sampled CCDs from S3:</p>
+        <pre><code>python Utilities/explore_code_quality.py \
+  --s3-bucket your-raw-bucket \
+  --prefix ccds/ \
+  --docs-per-source 20 \
+  --window-days 14 \
+  --output code_quality_report.json</code></pre>
+        <p style="margin-top: 0.6rem;">Or against a local directory of pre-downloaded samples:</p>
+        <pre><code>python Utilities/explore_code_quality.py \
+  --local-dir ./sampled_ccds/ \
+  --docs-per-source 20 \
+  --output code_quality_report.json</code></pre>
+        <div class="note">
+            The script supports restart: if interrupted, re-run and it skips already-processed files.
+            Results flush to disk every 200 records. Run multiple times to accumulate more samples per source.
+            The script also produces a <code class="inline-code">local_oid_inventory.csv</code> listing every
+            distinct local OID found, the source it came from, the domain, and a sample code value and
+            displayName — useful for starting a mapping table.
+        </div>
+    </section>
+
+    <!-- Edge Cases -->
+    <section class="panel">
+        <h2>Edge Cases</h2>
+        <ul>
+            <li><strong>Section Absent vs Missing Data:</strong> A source might not include a section at all
+                (e.g., a mental health provider with no lab section) — this is "Section Absent" and may be
+                legitimate. This is different from "Missing Data" where the section exists but coded elements
+                within it are empty or unusable. Both are tracked separately.</li>
+            <li><strong>NullFlavor codes:</strong> Some entries carry a <code class="inline-code">nullFlavor</code>
+                attribute instead of a code (e.g., <code class="inline-code">nullFlavor="UNK"</code>). These are
+                classified as "Missing" — the source acknowledged the element but couldn't code it.</li>
+            <li><strong>Deprecated OIDs:</strong> Older ICD-9 codes (OID <code class="inline-code">2.16.840.1.113883.6.103</code>)
+                are technically a recognized code system but are outdated. The report flags them separately as
+                "Standard (legacy)" so you can see how much historical data hasn't been updated.</li>
+            <li><strong>Free-text only entries:</strong> Some entries have only <code class="inline-code">originalText</code>
+                and no code element at all. Classified as "Missing" but noted separately — these may be
+                unstructured notes embedded in structured sections.</li>
+            <li><strong>Multiple codes per entry:</strong> A single observation may carry a primary code + multiple
+                translations. The exploration counts this as one element and gives it the "best" classification
+                (Standard > Local > Missing).</li>
+        </ul>
+    </section>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 Medallion Architecture — Data Processing Demo
+</div>
+
+</body>
+</html>
