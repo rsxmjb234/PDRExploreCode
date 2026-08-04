@@ -228,6 +228,25 @@ ALL_NATIONAL_CODE_SYSTEMS = set()
 for seg in SEGMENT_DEFINITIONS:
     ALL_NATIONAL_CODE_SYSTEMS.update(seg["accepted_code_systems"].keys())
 
+# Structural HL7 OIDs that appear in CDA entries as standard machinery.
+# These are NOT clinical code systems but they ARE expected/valid in well-formed CCDs.
+# We count them as "standard" because their presence indicates proper CDA construction.
+HL7_STRUCTURAL_OIDS = {
+    "2.16.840.1.113883.5.4":   "HL7 ActCode",
+    "2.16.840.1.113883.5.6":   "HL7 ActClass",
+    "2.16.840.1.113883.5.14":  "HL7 ActStatus",
+    "2.16.840.1.113883.5.83":  "HL7 ObservationInterpretation",
+    "2.16.840.1.113883.5.111": "HL7 RoleCode",
+    "2.16.840.1.113883.5.1076": "HL7 ConfidentialityCode",
+    "2.16.840.1.113883.5.1001": "HL7 ActMood",
+    "2.16.840.1.113883.3.26.1.1": "NCI Thesaurus",
+    "2.16.840.1.113883.6.259": "HL7 HealthcareServiceLocation",
+    "2.16.840.1.113883.12.112": "HL7 DischargeDisposition",
+}
+
+# Add structural OIDs to the master set (counted as standard everywhere)
+ALL_NATIONAL_CODE_SYSTEMS.update(HL7_STRUCTURAL_OIDS.keys())
+
 
 # =============================================================================
 # HELPER FUNCTIONS

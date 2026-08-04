@@ -37,7 +37,8 @@ import json
 import argparse
 from collections import Counter
 from segment_mapping import (
-    SEGMENT_DEFINITIONS, SEGMENTS_BY_LOINC, ALL_SEGMENT_KEYS, SEGMENTS_BY_KEY
+    SEGMENT_DEFINITIONS, SEGMENTS_BY_LOINC, ALL_SEGMENT_KEYS, SEGMENTS_BY_KEY,
+    ALL_NATIONAL_CODE_SYSTEMS
 )
 
 
@@ -151,7 +152,7 @@ def _score_section(section, segment_key):
         tuple: (counts_dict, local_oids_dict)
     """
     seg_def = SEGMENTS_BY_KEY[segment_key]
-    accepted_oids = set(seg_def["accepted_code_systems"].keys())
+    accepted_oids = set(seg_def["accepted_code_systems"].keys()) | ALL_NATIONAL_CODE_SYSTEMS
 
     standard = 0
     local = 0
@@ -288,14 +289,36 @@ def score_directory(input_dir, output_dir):
     for idx, filename in enumerate(sorted(xml_files), 1):
         xml_path = os.path.join(input_dir, filename)
         
-        # For local file scoring, build basic metadata from filename
-        source_metadata = {
-            "assigning_authority": "(dev-synthea)",
-            "qe": "(dev)",
-            "bucket": "",
-            "key": filename,
-            "path": xml_path,
-        }
+        # Try to get real source metadata from the expected JSON sidecar
+        expected_json_path = os.path.join(input_dir, filename.replace(".xml", "_expected.json"))
+        if os.path.exists(expected_json_path):
+            try:
+                with open(expected_json_path, "r", encoding="utf-8") as jf:
+                    exp = json.load(jf)
+                source_info = exp.get("source", {})
+                source_metadata = {
+                    "assigning_authority": source_info.get("assigning_authority", "(unknown)"),
+                    "qe": source_info.get("qe", "(unknown)"),
+                    "bucket": source_info.get("bucket", ""),
+                    "key": source_info.get("key", filename),
+                    "path": source_info.get("path", xml_path),
+                }
+            except Exception:
+                source_metadata = {
+                    "assigning_authority": "(unknown)",
+                    "qe": "(unknown)",
+                    "bucket": "",
+                    "key": filename,
+                    "path": xml_path,
+                }
+        else:
+            source_metadata = {
+                "assigning_authority": "(unknown)",
+                "qe": "(unknown)",
+                "bucket": "",
+                "key": filename,
+                "path": xml_path,
+            }
         
         result = score_ccd(xml_path, source_metadata=source_metadata)
 
