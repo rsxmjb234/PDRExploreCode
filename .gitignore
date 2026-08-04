@@ -1,2 +1,10 @@
-# Production data file — contains real patient document paths, do not sync
-PROD-upto100documentsfromeveryAAForASingleDay.csv
+# CSV files — contain S3 paths, patient data references, or run output
+*.csv
+
+# DEV and PROD output — all generated results, nothing tracked
+DEV-Output/
+PROD-Output/
+
+# Python cache
+__pycache__/
+*.pyc

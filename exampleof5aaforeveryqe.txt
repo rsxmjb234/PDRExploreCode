@@ -1,0 +1,37 @@
+qe	aa	quality_tier	notes
+bronx	1211 WPR Medical Services	D	Small practice, mostly local codes, labs often uncoded
+bronx	2.16.840.1.113883.3.564	B	Mid-size facility, decent coding, weak on procedures
+bronx	2.16.840.1.113883.3.7220.4.43086.167580017365050262148127821443590436644	C	Interface engine strips some codes, inconsistent
+bronx	2.16.840.1.113883.4.391.23392	A	Large Epic hospital, well-coded across all domains
+bronx	2.16.840.1.113883.4.391.319490	A	Large Epic hospital, well-coded across all domains
+bronx	2.16.840.1.113883.4.391.5972	C	Community clinic, problems good but labs local
+healtheconnections	ABILITY-BEYOND	D	Mental health, minimal coding, many sections absent
+healtheconnections	ACCESS-SUPPORTS	C	Behavioral health, some coding in meds/problems
+healtheconnections	ACHIEVE-REHAB	B	Rehab facility, good coding except immunizations
+healtheconnections	ADVANCED-OBGYN	A	OB/GYN practice on Epic, strong coding
+healtheconnections	ADV-ASTHMA	B	Specialty practice, good labs/meds, weak on procedures
+healtheconnections	AJAY-GOEL	C	Solo practitioner, mixed coding quality
+healthix	43STFP	A	Large academic center, excellent coding
+healthix	ABLEY	B	Community hospital, good overall, labs sometimes local
+healthix	ABMP	D	Small practice, heavy on local codes
+healthix	ACMH	C	Mental health, many sections absent, meds poorly coded
+healthix	ACPNY	A	Large network, well-coded
+healthix	ACPNYEPIC	A	Epic system, very well coded
+hixny	249	B	Mid-size hospital, solid except procedures
+hixny	2469	A	Academic medical center, strong across all domains
+hixny	2904	C	Community health center, problems/meds ok, labs weak
+hixny	3162	D	Small rural practice, mostly uncoded
+hixny	3169	B	Regional hospital, good coding, immunizations weak
+hixny	3747	A	Large health system on Epic
+rochester	ABLE2	C	Skilled nursing, limited coding scope
+rochester	ACCCD	A	Academic center, excellent across all domains
+rochester	ACH	B	Community hospital, labs sometimes local
+rochester	ACTR2	D	Rehab facility, minimal coded data
+rochester	AJHC	B	Health center, decent coding, weak on allergies
+rochester	ALIMS2	A	Large system, well-coded
+techbd	716HM	C	Home health, limited sections, what exists is mixed
+techbd	ABSALL	A	Large hospital, well-coded
+techbd	ABSAUR	B	Mid-size facility, good except vitals
+techbd	ABSFGM	D	Family practice, heavy local codes
+techbd	ABSGAS	C	GI specialty, narrow scope, inconsistent coding
+techbd	ABSHUM	A	Large health system, strong coding

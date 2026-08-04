@@ -129,13 +129,31 @@ Coverage rule:
 
 ## Mutation Patterns
 
-Use deterministic mutation profiles, for example:
+IMPORTANT DESIGN PRINCIPLE: Real EHR systems are CONSISTENT. A source that
+codes labs to LOINC does so for virtually every CCD it produces. A source
+with local codes sends local codes every time. Test data must reflect this.
 
-- Profile S: inject or preserve accepted national standard coding
-- Profile L: replace with local-only coding
-- Profile M: remove or null unusable coding (code element present but empty/nullFlavor)
-- Profile A: remove entire CDA section (section absent)
-- Profile X: mixed profile across segments for realistic combination checks
+Each QE|AA source is assigned a quality_tier (A/B/C/D) that determines its
+coding behavior CONSISTENTLY across all CCDs from that source:
+
+- Tier A (well-coded): 90-100% standard across all segments
+- Tier B (decent): 75-89% standard, with 1-2 weak segments
+- Tier C (mixed): 60-74% standard, several segments poorly coded
+- Tier D (poorly coded): <60% standard, heavy local codes, some sections absent
+
+Per-document variance within a source is SMALL (5-10%) — simulating the fact
+that the underlying EHR configuration drives coding, not the clinical content.
+
+The source quality profiles are defined in exampleof5aaforeveryqe.txt alongside
+the QE/AA identifiers. The generator reads this file and applies the appropriate
+quality behavior per source.
+
+Segment-level behavior per tier:
+
+- Tier A: all 14 segments coded to national standards (small random variance)
+- Tier B: most segments well-coded, 1-2 segments have 20-40% local codes
+- Tier C: problems/meds usually ok, labs/procedures often local, some sections absent
+- Tier D: mostly local codes, multiple sections absent, high missing rate
 
 ## Validation Workflow
 
