@@ -81,7 +81,7 @@ def load_actual_scores():
         
         key = (qe, aa)
         summary = result.get("summary", {})
-        source_totals[key]["total"] += summary.get("total_elements", 0)
+        source_totals[key]["total"] += summary.get("total_entries", summary.get("total_elements", 0))
         source_totals[key]["standard"] += summary.get("standard_count", 0)
         source_totals[key]["docs"] += 1
     

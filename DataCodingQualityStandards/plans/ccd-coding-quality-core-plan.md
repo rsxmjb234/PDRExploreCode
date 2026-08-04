@@ -2,218 +2,170 @@
 
 ## Purpose
 
-Answer the SHIN-NY policy question on QE value-add versus raw pass-through by
-measuring coding quality at source and QE levels across all 14 CCD segments.
+Measure whether each data source codes its clinical data to recognized
+national standards (LOINC, RxNorm, SNOMED-CT, etc.) — or uses local/proprietary
+codes that aren't interoperable.
 
 
-## Architecture (mirrors findandsaveEHRfromCCD-EntireCCD.py pattern)
+## The Simple Idea
+
+Each CCD section has a known "correct" code system. For every clinical entry
+in that section, we check: does it reference a national standard?
+
+- Medications → should be coded to **RxNorm** (or NDC)
+- Labs/Results → should be coded to **LOINC**
+- Problems → should be coded to **SNOMED-CT** (or ICD-10)
+- Procedures → should be coded to **SNOMED-CT** (or CPT, ICD-10-PCS)
+- Immunizations → should be coded to **CVX**
+- Vital Signs → should be coded to **LOINC**
+- Allergies → should be coded to **RxNorm** (substance) + **SNOMED-CT** (reaction)
+- Demographics → should be coded to **CDC CDCREC** (race/ethnicity) + **HL7** (gender)
+
+If the entry's code references one of these → **Standard** (good).
+If it references something else → **Local** (bad — proprietary code).
+If it has no code at all → **Missing**.
+If the entire section doesn't exist → **Section Absent**.
+
+We do NOT count structural CDA wrapper codes (ActCode, ActClass, etc.).
+We only look at the actual clinical data codes on the primary entries.
+
+
+## What We Look At Per Section
+
+For each CCD section, we find the **clinical entries** (the actual data
+items — observations, substance administrations, acts, encounters) and
+check the `code` element on each one.
+
+In XML terms, a clinical entry's code looks like:
+```xml
+<code code="1535362" 
+      codeSystem="2.16.840.1.113883.6.88"
+      codeSystemName="RxNorm"
+      displayName="sodium fluoride 0.0272 MG/MG Oral Gel"/>
+```
+
+We check the `codeSystem` attribute against the expected list for that section.
+
+Alternatively, some CCDs use URL-style references in text:
+```
+http://www.nlm.nih.gov/research/umls/rxnorm 1535362
+```
+
+Both styles indicate the same thing: this entry is coded to RxNorm.
+
+
+## Expected Code Systems Per Section
+
+| Section | LOINC Code | Expected Code Systems (any of these = "Standard") |
+|---------|-----------|--------------------------------------------------|
+| Medications | 10160-0 | RxNorm (`2.16.840.1.113883.6.88`), NDC (`2.16.840.1.113883.6.69`) |
+| Labs/Results | 30954-2 | LOINC (`2.16.840.1.113883.6.1`) |
+| Problems | 11450-4 | SNOMED-CT (`2.16.840.1.113883.6.96`), ICD-10-CM (`2.16.840.1.113883.6.90`) |
+| Procedures | 47519-4 | SNOMED-CT (`2.16.840.1.113883.6.96`), CPT (`2.16.840.1.113883.6.12`), ICD-10-PCS (`2.16.840.1.113883.6.4`) |
+| Immunizations | 11369-6 | CVX (`2.16.840.1.113883.12.292`) |
+| Vital Signs | 8716-3 | LOINC (`2.16.840.1.113883.6.1`) |
+| Allergies | 48765-2 | RxNorm (`2.16.840.1.113883.6.88`), SNOMED-CT (`2.16.840.1.113883.6.96`), UNII (`2.16.840.1.113883.4.9`) |
+| Encounters | 46240-8 | SNOMED-CT (`2.16.840.1.113883.6.96`), CPT (`2.16.840.1.113883.6.12`) |
+| Social History | 29762-2 | SNOMED-CT (`2.16.840.1.113883.6.96`), LOINC (`2.16.840.1.113883.6.1`) |
+| Care Plan | 18776-5 | SNOMED-CT (`2.16.840.1.113883.6.96`) |
+| Functional Status | 47420-5 | SNOMED-CT (`2.16.840.1.113883.6.96`), LOINC (`2.16.840.1.113883.6.1`) |
+| Demographics | (header) | CDC CDCREC (`2.16.840.1.113883.6.238`), HL7 Gender (`2.16.840.1.113883.5.1`) |
+
+
+## What We Count As a "Clinical Entry"
+
+Per section, we look for the primary coded data items — not the wrapper/structural
+elements that CDA uses for organization. Specifically:
+
+| Section | Entry Element(s) to Check |
+|---------|--------------------------|
+| Medications | `substanceAdministration/.../code` on the manufactured material |
+| Labs | `observation/code` (the test identity — not the organizer wrapper) |
+| Problems | `observation/value` (the diagnosis code, often in `@value`) |
+| Procedures | `procedure/code` or `act/code` |
+| Immunizations | `substanceAdministration/.../code` on the vaccine material |
+| Vitals | `observation/code` (the vital type — height, weight, BP, etc.) |
+| Allergies | `observation/value` (the allergen) or `participant/code` |
+| Encounters | `encounter/code` (the encounter type) |
+| Social History | `observation/code` or `observation/value` |
+| Care Plan | `act/code` or `observation/code` |
+| Functional Status | `observation/code` or `observation/value` |
+| Demographics | `raceCode`, `ethnicGroupCode`, `administrativeGenderCode` directly |
+
+Key rule: we look at the **FIRST meaningful code** on each entry.
+If that code references a national standard → Standard.
+If not → check `translation` elements for a standard code (give credit if found).
+If nothing → Local or Missing.
+
+
+## Scoring Per Source
+
+For each QE|AA:
+1. Score N documents (20 in PROD, 10 in DEV)
+2. Aggregate per-section counts: how many entries standard vs local vs missing
+3. Compute section_standard_pct = standard / total for each section
+4. Compute overall_standard_pct across all sections
+5. Assign tier: A (>=90%), B (75-89%), C (60-74%), D (<60%)
+
+Note: In DEV with Synthea data, the ceiling is lower (~70%) because Synthea
+uses some structural codes we don't track. Thresholds are adjusted for DEV.
+In PROD with real Epic/Cerner data, expect the full 90%+ range.
+
+
+## Architecture (same pattern as findandsaveEHRfromCCD-EntireCCD.py)
 
 ```
-[Candidate CSV]  -->  [Batch Scorer]  -->  [1 JSON per CCD]  -->  [Athena]
-     |                      |                     |
-     |   DEV: make_dev_candidates_csv.py          |   DEV: local folder
-     |   PROD: findcandidatesforexplore.sql       |   PROD: S3 analytics bucket
-     |                      |
-     |   Downloads full CCD from S3
-     |   Scores 14 segments using segment_mapping.py
-     |   Writes 1 JSON result per CCD processed
-     |   Restart: skips files where JSON already exists
+[Candidate CSV]  →  [Batch Scorer]  →  [1 JSON per CCD]  →  [HTML Report]
 ```
 
-### Key Design Decisions
-
-1. **Input**: Candidate CSV with columns: `assigning_authority, qe, bucket, key, size, last_modified`
-   - DEV: produced by `make_dev_candidates_csv.py` (lists S3 test data folder)
-   - PROD: produced by `findcandidatesforexplore.sql` (Athena export)
-
-2. **Output**: One JSON file per CCD processed (not a single big CSV)
-   - Enables Athena queries over partitioned JSON output
-   - Each JSON is self-contained with all metadata
-   - DEV: written to local `scored_output/` folder
-   - PROD: written to `s3://<analytics-bucket>/ccd-coding-quality/...`
-
-3. **Restart/Idempotency**: Before processing a CCD, check if its output JSON
-   already exists. If yes, skip it. This means:
-   - Re-running the script picks up where it left off
-   - To reprocess: delete the output JSON
-   - No flush-every-N logic needed (each file is written immediately)
-
-4. **DEV/PROD profile switch**: Single `ACTIVE_PROFILE` variable at top of script.
-   Same core scoring logic in both; only config differs.
+1. Input: Candidate CSV (assigning_authority, qe, bucket, key, size, last_modified)
+2. Processing: Download CCD, find sections, count clinical entries, classify each
+3. Output: One JSON per CCD with source metadata + per-section counts
+4. Restart: Skip files where output JSON already exists
+5. Report: HTML files grouped by QE, worst sources first
 
 
-## Scope
-
-- Evaluate coding quality for CCDs from approximately 4,500 sources.
-- Report at source level and QE level.
-- Cover all 14 target segments using fixed segment keys (including demographics).
-- Produce one JSON result per CCD.
-- Prioritize readable, quickly created analysis code over production-grade repeatability.
-
-Out of scope:
-
-- DEV synthetic test-data creation logic (see dev-test-data plan).
-- Payment policy implementation.
-- Production ETL hardening and dashboard implementation.
-
-
-## Required Segment Coverage (14)
-
-1. allergies
-2. assessment
-3. care_plan
-4. chief_complaint
-5. demographics
-6. encounters
-7. functional_status
-8. immunizations
-9. labs_results
-10. medications
-11. problems
-12. procedures
-13. social_history
-14. vitals
-
-
-## Segment Scoring Model
-
-Per coded element within a segment:
-
-- **Standard**: codeSystem OID is in the segment's accepted national list
-  (or a translation element carries a national code)
-- **Local**: codeSystem OID is present but NOT in the national list
-- **Missing**: no @code or @codeSystem, or nullFlavor present
-- **Section Absent**: the entire CDA section does not exist in the CCD
-
-The distinction between Missing and Section Absent:
-
-- Missing = source attempted to send data but didn't code it properly (fixable)
-- Section Absent = source never included this section (may be legitimate scope)
-
-Section Absent entries are excluded from the scoring denominator.
-
-
-## Decision Framework (Tiers)
-
-- Tier A: standard_pct >= 90 and missing_pct <= 5. Policy: raw pass-through.
-- Tier B: standard_pct 75-89 or missing_pct 6-10. Policy: targeted improvements.
-- Tier C: standard_pct 60-74 or missing_pct 11-20. Policy: QE normalization justified.
-- Tier D: standard_pct < 60 or missing_pct > 20. Policy: QE transformation strongly justified.
-
-
-## JSON Output Schema (per CCD)
+## Output JSON Schema (per CCD)
 
 ```json
 {
-  "run_date": "2026-07-08",
   "source": {
     "assigning_authority": "STRONG MEMORIAL",
     "qe": "rochester",
     "bucket": "nyec-pdr-prod-rochester",
     "key": "STRONG MEMORIAL/ccd/2026/Jul/21/...",
-    "path": "s3://nyec-pdr-prod-rochester/STRONG MEMORIAL/ccd/..."
+    "path": "s3://..."
   },
-  "processing": {
-    "processing_time_ms": 342,
-    "file_size_bytes": 456000
-  },
+  "processing_time_ms": 342,
+  "file_size_bytes": 456000,
   "summary": {
-    "total_elements": 580,
-    "standard_count": 510,
-    "local_count": 45,
-    "missing_count": 25,
+    "total_entries": 45,
+    "standard_count": 40,
+    "local_count": 3,
+    "missing_count": 2,
     "sections_absent": 2
   },
   "domain_counts": {
-    "allergies":        { "total": 12, "standard": 10, "local": 1, "missing": 1, "section_absent": false },
-    "assessment":       { "total": 0,  "standard": 0,  "local": 0, "missing": 0, "section_absent": true },
-    "care_plan":        { "total": 8,  "standard": 7,  "local": 1, "missing": 0, "section_absent": false },
+    "medications": { "total": 8, "standard": 8, "local": 0, "missing": 0, "section_absent": false },
+    "labs_results": { "total": 12, "standard": 11, "local": 1, "missing": 0, "section_absent": false },
+    "problems": { "total": 10, "standard": 9, "local": 0, "missing": 1, "section_absent": false },
     "...": "..."
   },
-  "local_oid_counts": {
-    "1.2.3.4.5.facility": 30,
-    "2.16.840.1.113883.3.xxx": 15
+  "local_code_systems_found": {
+    "1.2.3.4.5.facility": 3
   }
 }
 ```
 
 
-## Output Path Convention
-
-DEV:
-```
-DataCodingQualityStandards/scored_output/<filename>_scored.json
-```
-
-PROD:
-```
-s3://<analytics-bucket>/ccd-coding-quality/run_date=YYYY-MM-DD/qe=<qe>/assigning_authority=<aa>/<filename>_scored.json
-```
-
-
-## DEV Validation Handshake (Required)
-
-1. `generate_test_cases.py` creates mutated CCDs + expected-outcome JSONs
-2. `score_ccd_coding_quality.py` scores those same CCDs
-3. `validate_test_cases.py` confirms scored == expected (15/15 pass)
-4. Only after validation passes can PROD runs proceed
-
-Status: VALIDATED (15/15 pass)
-
-
-## Candidate List Generation
-
-DEV:
-- `make_dev_candidates_csv.py` lists CCDs from `s3://nyec.ccda.learning/TestDataForDeterminingLevelOfCodeSetQuality/`
-- Outputs: `DEV-CodingQuality-Candidates.csv`
-- Columns: `assigning_authority, qe, bucket, key, size, last_modified`
-
-PROD:
-- `findcandidatesforexplore.sql` run in Athena
-- Export to CSV with same columns plus `bucket`
-- Feed CSV to the batch scorer
-
-
-## Batch Scorer Architecture
-
-Same pattern as `findandsaveEHRfromCCD-EntireCCD.py`:
-
-1. Read candidate CSV (all rows, filter already-processed after)
-2. Check which output JSONs already exist (restart support)
-3. Connect to S3
-4. For each unprocessed candidate:
-   a. Download full CCD from S3
-   b. Parse with ElementTree
-   c. Score all 14 segments using `segment_mapping.py`
-   d. Write result JSON immediately (no batching needed)
-   e. Print progress
-5. Print summary with timing
-
-DEV/PROD difference: only the profile config (bucket, CSV path, output location).
-
-
-## Suggested Run Modes
-
-- Quick validation: max_files = 5-10
-- Operational baseline: max_files = 20
-- Extended study: max_files = 50+ (restart picks up where you left off)
-
-
-## Athena Layer
-
-- External table over JSON output (PROD)
-- Keep stable key names in domain_counts (14 segments)
-- Query per source, per QE, per segment
-- Report section_absent separately from coding quality
-
-
 ## Deliverables
 
-- [x] segment_mapping.py (14 segments, OID tables)
-- [x] generate_test_cases.py (DEV test data generator)
-- [x] score_ccd_coding_quality.py (core scorer, validated)
+- [x] Plans (this document)
+- [x] generate_test_cases.py (DEV test data with realistic quality tiers)
+- [ ] segment_mapping.py (REWRITE: simpler, entry-focused approach)
+- [ ] score_ccd_coding_quality.py (REWRITE: count clinical entries only)
 - [x] validate_test_cases.py (promotion gate)
-- [x] regenerate_expected_from_scorer.py (utility)
-- [x] make_dev_candidates_csv.py (DEV candidate list builder)
-- [ ] score_ccd_coding_quality_batch.py (batch runner with CSV input, JSON-per-file output, restart)
-- [ ] Athena table definition for scored JSON output
+- [x] validate_tier_assignments.py (expected tier = actual tier)
+- [x] generate_report.py (HTML reports)
+- [x] 0. run_dev_full_pipeline.py (end-to-end)
+- [x] 0. run_PROD_full_pipeline.py (PROD runner)

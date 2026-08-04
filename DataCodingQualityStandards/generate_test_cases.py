@@ -36,9 +36,7 @@ import os
 import json
 import random
 import time
-from segment_mapping import (
-    SEGMENT_DEFINITIONS, SEGMENTS_BY_LOINC, ALL_SEGMENT_KEYS, SEGMENTS_BY_KEY
-)
+from segment_mapping import SECTIONS, ALL_SEGMENT_KEYS, SECTIONS_BY_LOINC
 
 
 # =============================================================================
@@ -115,14 +113,15 @@ TIER_PROFILES = {
         # Mixed: problems/meds ok, labs/procedures often local, some absent
         "default_state": "standard",
         "segment_overrides": {
-            "labs_results": {"state": "local", "pct": 0.55},
-            "procedures": {"state": "local", "pct": 0.45},
-            "vitals": {"state": "local", "pct": 0.30},
-            "allergies": {"state": "local", "pct": 0.25},
-            "encounters": {"state": "missing", "pct": 0.20},
+            "labs_results": {"state": "local", "pct": 0.70},
+            "procedures": {"state": "local", "pct": 0.60},
+            "vitals": {"state": "local", "pct": 0.50},
+            "allergies": {"state": "local", "pct": 0.40},
+            "encounters": {"state": "local", "pct": 0.35},
+            "problems": {"state": "local", "pct": 0.25},
         },
         "sections_absent": ["functional_status", "assessment"],
-        "variance": 0.10,
+        "variance": 0.08,
     },
     "D": {
         # Poorly coded: mostly local, high missing, multiple sections absent
@@ -176,8 +175,8 @@ def find_sections(root):
         code_el = section.find(f"{{{NS}}}code")
         if code_el is not None:
             loinc = code_el.get("code", "")
-            if loinc in SEGMENTS_BY_LOINC:
-                seg_key = SEGMENTS_BY_LOINC[loinc]["segment_key"]
+            if loinc in SECTIONS_BY_LOINC:
+                seg_key = SECTIONS_BY_LOINC[loinc]
                 found[seg_key] = section
     return found
 
@@ -204,13 +203,29 @@ def inject_assigning_authority(root, assigning_authority):
             id_el.set("root", "2.16.840.1.113883.4.1")
 
 
-def get_coded_elements(section):
-    """Get all code/value/translation elements in a section."""
+def get_coded_elements_for_section(section, seg_key):
+    """
+    Find the clinical entry code elements that the scorer will check.
+    Uses the same entry_xpath and code_path as the scorer for alignment.
+    """
+    sec_def = SECTIONS[seg_key]
+    entry_tag = sec_def["entry_xpath"].split("/")[-1]
+    code_path = sec_def["code_path"]
+    
     elements = []
-    for el in section.iter():
-        if el.tag in [f"{{{NS}}}code", f"{{{NS}}}value", f"{{{NS}}}translation"]:
-            if el.get("codeSystem") or el.get("code"):
-                elements.append(el)
+    entries = section.findall(f".//{{{NS}}}{entry_tag}")
+    
+    for entry in entries:
+        if code_path.startswith(".//"):
+            parts = code_path[3:].split("/")
+            xpath = "/".join(f"{{{NS}}}{p}" for p in parts)
+            code_el = entry.find(f".//{xpath}")
+        else:
+            code_el = entry.find(f"{{{NS}}}{code_path}")
+        
+        if code_el is not None and (code_el.get("codeSystem") or code_el.get("code")):
+            elements.append(code_el)
+    
     return elements
 
 
@@ -337,7 +352,7 @@ def generate_test_ccd(root, source_profile, sections_found):
             continue
         
         section = sections_found[seg_key]
-        elements = get_coded_elements(section)
+        elements = get_coded_elements_for_section(section, seg_key)
         
         if not elements:
             domain_counts[seg_key] = {

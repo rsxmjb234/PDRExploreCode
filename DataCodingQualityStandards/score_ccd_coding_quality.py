@@ -1,34 +1,13 @@
 """
-score_ccd_coding_quality.py — Core Scoring Pipeline for CCD Coding Quality
+score_ccd_coding_quality.py — Score a CCD's coding quality per section
 
-PURPOSE:
-    Read a CCD XML file, walk all 14 segments, classify each coded element as
-    Standard / Local / Missing, and output a JSON result that matches the
-    expected-outcome contract from the DEV test-case generator.
+Simple approach:
+  1. Find each clinical section by its LOINC code
+  2. Find the clinical entries within that section
+  3. Check each entry's primary code: is it a recognized national standard?
+  4. Count: Standard / Local / Missing per section
 
-    This is the script that must produce IDENTICAL output to the expected JSONs
-    before it can be promoted to PROD.
-
-HOW IT WORKS:
-    1. Parse the CCD XML with ElementTree
-    2. Find each of the 14 segments (by LOINC section code or header location)
-    3. For each segment, walk all coded elements (code, value, translation tags)
-    4. Classify each element:
-       - Standard: codeSystem OID is in the segment's accepted national list
-       - Local: codeSystem OID is present but NOT in the national list
-       - Missing: no @code or @codeSystem (or nullFlavor present)
-    5. If a segment's section doesn't exist in the CCD: mark section_absent=True
-    6. Output JSON with summary + domain_counts + local_oid_counts
-
-USAGE:
-    # Score a single file:
-    python score_ccd_coding_quality.py --input path/to/ccd.xml --output path/to/result.json
-
-    # Score all files in a directory:
-    python score_ccd_coding_quality.py --input-dir path/to/dir/ --output-dir path/to/results/
-
-    # Score the generated test cases (default mode):
-    python score_ccd_coding_quality.py
+We ONLY look at clinical entry codes — not structural CDA wrappers.
 """
 
 import xml.etree.ElementTree as ET
@@ -36,195 +15,202 @@ import os
 import json
 import argparse
 from collections import Counter
-from segment_mapping import (
-    SEGMENT_DEFINITIONS, SEGMENTS_BY_LOINC, ALL_SEGMENT_KEYS, SEGMENTS_BY_KEY,
-    ALL_NATIONAL_CODE_SYSTEMS
-)
+from segment_mapping import SECTIONS, ALL_SEGMENT_KEYS, SECTIONS_BY_LOINC
 
-
-# CDA namespace
 NS = "urn:hl7-org:v3"
 
 
 # =============================================================================
-# CORE: Score a single CCD
+# CORE: Score one CCD
 # =============================================================================
 
 def score_ccd(xml_path, source_metadata=None):
     """
-    Parse a CCD XML file and score all 14 segments for coding quality.
-
-    Args:
-        xml_path (str): Path to a CCD XML file
-        source_metadata (dict, optional): Source context from candidates CSV:
-            - assigning_authority: who sent this CCD
-            - qe: which QE it came through
-            - bucket: S3 bucket
-            - key: S3 object key
-            - path: full s3://bucket/key
-
-    Returns:
-        dict: Scoring result with source metadata and domain_counts
+    Parse a CCD and score each section's coding quality.
+    
+    For each section: find clinical entries, check if their code uses
+    a recognized national standard for that section type.
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    # Find all sections and map to segment keys
-    sections_found = _find_sections(root)
+    # Find all sections by LOINC code
+    section_elements = _find_sections(root)
 
-    # Score each segment
     domain_counts = {}
-    local_oid_counter = Counter()
+    local_systems = Counter()
 
-    for seg_key in ALL_SEGMENT_KEYS:
+    for seg_key, sec_def in SECTIONS.items():
         if seg_key == "demographics":
-            counts, local_oids = _score_demographics(root)
-        elif seg_key in sections_found:
-            counts, local_oids = _score_section(sections_found[seg_key], seg_key)
+            counts, locals_found = _score_demographics(root, sec_def)
+        elif seg_key in section_elements:
+            counts, locals_found = _score_section(
+                section_elements[seg_key], sec_def
+            )
         else:
-            # Section absent
-            counts = {
-                "total": 0,
-                "standard": 0,
-                "local": 0,
-                "missing": 0,
-                "section_absent": True,
-            }
-            local_oids = {}
+            counts = {"total": 0, "standard": 0, "local": 0, "missing": 0, "section_absent": True}
+            locals_found = {}
 
         domain_counts[seg_key] = counts
-        local_oid_counter.update(local_oids)
+        local_systems.update(locals_found)
 
-    # Build summary
-    total_elements = sum(dc["total"] for dc in domain_counts.values())
-    standard_count = sum(dc["standard"] for dc in domain_counts.values())
-    local_count = sum(dc["local"] for dc in domain_counts.values())
-    missing_count = sum(dc["missing"] for dc in domain_counts.values())
-    sections_absent = sum(1 for dc in domain_counts.values() if dc["section_absent"])
+    # Summary
+    total = sum(dc["total"] for dc in domain_counts.values())
+    standard = sum(dc["standard"] for dc in domain_counts.values())
+    local = sum(dc["local"] for dc in domain_counts.values())
+    missing = sum(dc["missing"] for dc in domain_counts.values())
+    absent = sum(1 for dc in domain_counts.values() if dc["section_absent"])
 
-    result = {
+    return {
         "source": source_metadata or {},
         "summary": {
-            "total_elements": total_elements,
-            "standard_count": standard_count,
-            "local_count": local_count,
-            "missing_count": missing_count,
-            "sections_absent": sections_absent,
+            "total_entries": total,
+            "standard_count": standard,
+            "local_count": local,
+            "missing_count": missing,
+            "sections_absent": absent,
         },
         "domain_counts": domain_counts,
-        "local_oid_counts": dict(local_oid_counter),
+        "local_code_systems_found": dict(local_systems),
     }
-
-    return result
 
 
 # =============================================================================
-# HELPER: Find sections in a CCD
+# Find sections by LOINC code
 # =============================================================================
 
 def _find_sections(root):
-    """Map CDA sections to segment keys using their LOINC code."""
+    """Map section elements to segment keys using their LOINC code."""
     found = {}
-    sections = root.findall(
+    for section in root.findall(
         f".//{{{NS}}}component/{{{NS}}}structuredBody/{{{NS}}}component/{{{NS}}}section"
-    )
-
-    for section in sections:
+    ):
         code_el = section.find(f"{{{NS}}}code")
         if code_el is not None:
             loinc = code_el.get("code", "")
-            if loinc in SEGMENTS_BY_LOINC:
-                seg_key = SEGMENTS_BY_LOINC[loinc]["segment_key"]
+            if loinc in SECTIONS_BY_LOINC:
+                seg_key = SECTIONS_BY_LOINC[loinc]
                 found[seg_key] = section
-
     return found
 
 
 # =============================================================================
-# HELPER: Score a single section
+# Score one section: find entries, check their codes
 # =============================================================================
 
-def _score_section(section, segment_key):
+def _score_section(section_element, sec_def):
     """
-    Walk all coded elements in a section and classify each.
-
+    Find clinical entries in a section and classify each entry's code.
+    
     Returns:
-        tuple: (counts_dict, local_oids_dict)
+        tuple: (counts_dict, local_systems_counter)
     """
-    seg_def = SEGMENTS_BY_KEY[segment_key]
-    accepted_oids = set(seg_def["accepted_code_systems"].keys()) | ALL_NATIONAL_CODE_SYSTEMS
+    accepted = set(sec_def["accepted"].keys())
+    entry_tag = sec_def["entry_xpath"].split("/")[-1]  # e.g., "observation", "substanceAdministration"
+    code_path = sec_def["code_path"]  # e.g., "code", "value", ".//manufacturedMaterial/code"
 
     standard = 0
     local = 0
     missing = 0
-    local_oids = Counter()
+    local_systems = Counter()
 
-    for el in section.iter():
-        if el.tag not in [f"{{{NS}}}code", f"{{{NS}}}value", f"{{{NS}}}translation"]:
-            continue
+    # Find all entry elements of the expected type within this section
+    entries = section_element.findall(f".//{{{NS}}}{entry_tag}")
 
-        code_system = el.get("codeSystem", "")
-        code_val = el.get("code", "")
-        null_flavor = el.get("nullFlavor", "")
+    for entry in entries:
+        # Find the code element on this entry
+        classification = _classify_entry_code(entry, code_path, accepted)
 
-        # Classify this element
-        if null_flavor or (not code_val and not code_system):
-            # Missing: nullFlavor or no code/codeSystem at all
-            missing += 1
-        elif code_system in accepted_oids:
-            # Standard: recognized national code system
+        if classification == "standard":
             standard += 1
-        elif code_system:
-            # Local: has a codeSystem but it's not national
+        elif classification == "local":
             local += 1
-            local_oids[code_system] += 1
+            # Track which local system was used
+            code_el = _find_code_element(entry, code_path)
+            if code_el is not None:
+                sys_oid = code_el.get("codeSystem", "")
+                if sys_oid:
+                    local_systems[sys_oid] += 1
         else:
-            # Has a code but no codeSystem — treat as missing
             missing += 1
 
     total = standard + local + missing
 
-    counts = {
+    return {
         "total": total,
         "standard": standard,
         "local": local,
         "missing": missing,
         "section_absent": False,
-    }
+    }, dict(local_systems)
 
-    return counts, dict(local_oids)
+
+def _find_code_element(entry, code_path):
+    """Find the code element on an entry using the configured path."""
+    if code_path.startswith(".//"):
+        # Nested path like ".//manufacturedMaterial/code"
+        parts = code_path[3:].split("/")
+        xpath = "/".join(f"{{{NS}}}{p}" for p in parts)
+        return entry.find(f".//{xpath}")
+    else:
+        # Direct child like "code" or "value"
+        return entry.find(f"{{{NS}}}{code_path}")
+
+
+def _classify_entry_code(entry, code_path, accepted_systems):
+    """
+    Classify one entry's code as standard, local, or missing.
+    
+    Checks primary code first. If not standard, checks translation elements.
+    """
+    code_el = _find_code_element(entry, code_path)
+
+    if code_el is None:
+        return "missing"
+
+    code_system = code_el.get("codeSystem", "")
+    code_val = code_el.get("code", "")
+    null_flavor = code_el.get("nullFlavor", "")
+
+    # No code at all or nullFlavor
+    if null_flavor or (not code_val and not code_system):
+        return "missing"
+
+    # Primary code uses a national standard
+    if code_system in accepted_systems:
+        return "standard"
+
+    # Check translation elements (some sources put standard code in translation)
+    for translation in code_el.findall(f"{{{NS}}}translation"):
+        trans_system = translation.get("codeSystem", "")
+        if trans_system in accepted_systems:
+            return "standard"
+
+    # Has a code but not a recognized national standard
+    if code_system:
+        return "local"
+
+    return "missing"
 
 
 # =============================================================================
-# HELPER: Score demographics
+# Score demographics (header, not a section)
 # =============================================================================
 
-def _score_demographics(root):
-    """
-    Score coded demographic elements in recordTarget/patientRole/patient.
-    Demographics use a broader acceptance: any recognized demographic OID counts.
-    """
-    seg_def = SEGMENTS_BY_KEY["demographics"]
-    accepted_oids = set(seg_def["accepted_code_systems"].keys())
-
+def _score_demographics(root, sec_def):
+    """Score demographic coded elements in the CDA header."""
+    accepted = set(sec_def["accepted"].keys())
     patient = root.find(f".//{{{NS}}}recordTarget/{{{NS}}}patientRole/{{{NS}}}patient")
+
     if patient is None:
-        return {
-            "total": 0, "standard": 0, "local": 0, "missing": 0,
-            "section_absent": True,
-        }, {}
+        return {"total": 0, "standard": 0, "local": 0, "missing": 0, "section_absent": True}, {}
 
     standard = 0
     local = 0
     missing = 0
-    local_oids = Counter()
+    local_systems = Counter()
 
-    # Check each demographic coded element
-    demo_tags = [
-        "raceCode", "ethnicGroupCode", "administrativeGenderCode", "maritalStatusCode"
-    ]
-
-    for tag in demo_tags:
+    for tag in ["raceCode", "ethnicGroupCode", "administrativeGenderCode"]:
         el = patient.find(f"{{{NS}}}{tag}")
         if el is None:
             continue
@@ -235,103 +221,63 @@ def _score_demographics(root):
 
         if null_flavor or (not code_val and not code_system):
             missing += 1
-        elif code_system in accepted_oids:
+        elif code_system in accepted:
             standard += 1
         elif code_system:
             local += 1
-            local_oids[code_system] += 1
+            local_systems[code_system] += 1
         else:
             missing += 1
-
-    # Language
-    lang_el = patient.find(f".//{{{NS}}}languageCommunication/{{{NS}}}languageCode")
-    if lang_el is not None:
-        code_val = lang_el.get("code", "")
-        null_flavor = lang_el.get("nullFlavor", "")
-        if null_flavor or not code_val:
-            missing += 1
-        else:
-            # languageCode uses @code directly (no codeSystem attribute in CDA)
-            # If it has a value, count as standard
-            standard += 1
 
     total = standard + local + missing
-
-    counts = {
+    return {
         "total": total,
         "standard": standard,
         "local": local,
         "missing": missing,
         "section_absent": False,
-    }
-
-    return counts, dict(local_oids)
+    }, dict(local_systems)
 
 
 # =============================================================================
-# BATCH SCORING
+# BATCH: Score a directory of XMLs
 # =============================================================================
 
 def score_directory(input_dir, output_dir):
-    """
-    Score all XML files in a directory and write result JSONs.
-
-    Args:
-        input_dir (str): Directory containing CCD XML files
-        output_dir (str): Directory to write result JSON files
-    """
+    """Score all XML files in a directory, write result JSONs."""
     os.makedirs(output_dir, exist_ok=True)
-
     xml_files = [f for f in os.listdir(input_dir) if f.lower().endswith(".xml")]
     print(f"Found {len(xml_files)} XML files to score")
     print()
 
     for idx, filename in enumerate(sorted(xml_files), 1):
         xml_path = os.path.join(input_dir, filename)
-        
-        # Try to get real source metadata from the expected JSON sidecar
-        expected_json_path = os.path.join(input_dir, filename.replace(".xml", "_expected.json"))
-        if os.path.exists(expected_json_path):
+
+        # Get source metadata from expected JSON sidecar if available
+        expected_path = os.path.join(input_dir, filename.replace(".xml", "_expected.json"))
+        if os.path.exists(expected_path):
             try:
-                with open(expected_json_path, "r", encoding="utf-8") as jf:
+                with open(expected_path, "r", encoding="utf-8") as jf:
                     exp = json.load(jf)
-                source_info = exp.get("source", {})
-                source_metadata = {
-                    "assigning_authority": source_info.get("assigning_authority", "(unknown)"),
-                    "qe": source_info.get("qe", "(unknown)"),
-                    "bucket": source_info.get("bucket", ""),
-                    "key": source_info.get("key", filename),
-                    "path": source_info.get("path", xml_path),
-                }
+                source_metadata = exp.get("source", {})
             except Exception:
-                source_metadata = {
-                    "assigning_authority": "(unknown)",
-                    "qe": "(unknown)",
-                    "bucket": "",
-                    "key": filename,
-                    "path": xml_path,
-                }
+                source_metadata = {"assigning_authority": "(unknown)", "qe": "(unknown)"}
         else:
-            source_metadata = {
-                "assigning_authority": "(unknown)",
-                "qe": "(unknown)",
-                "bucket": "",
-                "key": filename,
-                "path": xml_path,
-            }
-        
+            source_metadata = {"assigning_authority": "(unknown)", "qe": "(unknown)"}
+
         result = score_ccd(xml_path, source_metadata=source_metadata)
 
-        # Write result JSON
+        # Write result
         result_filename = filename.replace(".xml", "_scored.json")
         result_path = os.path.join(output_dir, result_filename)
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
 
         summary = result["summary"]
-        print(f"  [{idx:2d}/{len(xml_files)}] {filename}")
-        print(f"           S={summary['standard_count']} L={summary['local_count']} "
-              f"M={summary['missing_count']} Absent={summary['sections_absent']}")
+        total = summary["total_entries"]
+        std = summary["standard_count"]
+        pct = int(100 * std / total) if total > 0 else 0
+        print(f"  [{idx:3d}/{len(xml_files)}] {filename[:55]}  {pct}% standard ({total} entries)")
 
     print()
     print(f"Wrote {len(xml_files)} result files to: {output_dir}")
@@ -343,56 +289,43 @@ def score_directory(input_dir, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Score CCD coding quality")
-    parser.add_argument("--input", help="Single CCD XML file to score")
-    parser.add_argument("--output", help="Output JSON path (for single file mode)")
-    parser.add_argument("--input-dir", help="Directory of CCD XMLs to score")
+    parser.add_argument("--input", help="Single CCD XML file")
+    parser.add_argument("--output", help="Output JSON path")
+    parser.add_argument("--input-dir", help="Directory of CCD XMLs")
     parser.add_argument("--output-dir", help="Directory for result JSONs")
     args = parser.parse_args()
 
     if args.input:
-        # Single file mode
-        print(f"Scoring: {args.input}")
         result = score_ccd(args.input)
-
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
                 json.dump(result, f, indent=2)
-            print(f"Result written to: {args.output}")
         else:
             print(json.dumps(result, indent=2))
 
     elif args.input_dir:
-        # Directory mode
         output_dir = args.output_dir or os.path.join(args.input_dir, "scored_results")
         score_directory(args.input_dir, output_dir)
 
     else:
-        # Default: score the generated test cases
-        test_cases_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "DEV-Output",
-            "generated_test_cases"
-        )
-        scored_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "DEV-Output",
-            "scored_results"
-        )
+        # Default: score generated test cases
+        base = os.path.dirname(os.path.abspath(__file__))
+        test_dir = os.path.join(base, "DEV-Output", "generated_test_cases")
+        scored_dir = os.path.join(base, "DEV-Output", "scored_results")
 
         print("=" * 75)
-        print("CCD Coding Quality — Core Scoring Pipeline")
+        print("CCD Coding Quality — Scorer (entry-focused)")
         print("=" * 75)
         print()
-        print(f"  Input:  {test_cases_dir}")
+        print(f"  Input:  {test_dir}")
         print(f"  Output: {scored_dir}")
         print()
 
-        if not os.path.exists(test_cases_dir):
+        if not os.path.exists(test_dir):
             print("ERROR: generated_test_cases/ not found. Run generate_test_cases.py first.")
             return
 
-        score_directory(test_cases_dir, scored_dir)
-
+        score_directory(test_dir, scored_dir)
         print()
         print("Done! Run validate_test_cases.py to compare against expected outcomes.")
 
