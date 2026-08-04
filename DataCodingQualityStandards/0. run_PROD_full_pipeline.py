@@ -29,6 +29,9 @@ import time
 # AWS CLI profile for PROD S3 access
 AWS_PROFILE = "default"
 
+# Maximum files to process per run (set to None for unlimited)
+MAX_FILES = 30000
+
 # Input: Athena candidate CSV (exported from findcandidatesforexplore.sql)
 # Must have columns: assigning_authority, qe, bucket, key, size, last_modified
 # For first run: using the same candidates as findandsaveEHRfromCCD-EntireCCD.py
@@ -77,6 +80,7 @@ def main():
     print("CONFIGURATION:")
     print(f"  AWS Profile:     {AWS_PROFILE}")
     print(f"  Candidates CSV:  {CANDIDATES_CSV}")
+    print(f"  Max files/run:   {MAX_FILES}")
     print(f"  Allowed buckets: {len(ALLOWED_BUCKETS)}")
     print(f"  Output dir:      {OUTPUT_DIR}")
     print()
@@ -150,26 +154,45 @@ def main():
 
     print(f"  Found {len(candidates)} candidates in CSV")
 
-    # Check which are already scored (restart support)
-    already_scored = set()
+    # Check which S3 paths are already scored (restart + dedup protection)
+    # We track by full S3 path to ensure the same file is NEVER processed twice
+    already_scored_paths = set()
     if os.path.exists(SCORED_DIR):
         for f in os.listdir(SCORED_DIR):
             if f.endswith("_scored.json"):
-                already_scored.add(f)
+                try:
+                    with open(os.path.join(SCORED_DIR, f), "r", encoding="utf-8") as jf:
+                        scored = json.load(jf)
+                    s3_path = scored.get("source", {}).get("path", "")
+                    if s3_path:
+                        already_scored_paths.add(s3_path)
+                except Exception:
+                    pass
 
-    # Filter to unprocessed
+    # Filter to unprocessed candidates only (dedup by S3 path)
     to_process = []
+    seen_paths = set()  # Also catch duplicates WITHIN the CSV itself
     for c in candidates:
+        if c["path"] in already_scored_paths:
+            continue  # Already scored in a previous run
+        if c["path"] in seen_paths:
+            continue  # Duplicate row in the CSV
+        seen_paths.add(c["path"])
+        
+        # Build output filename
         output_filename = os.path.basename(c["key"]).replace(".xml", "_scored.json")
         output_filename = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in output_filename)
         c["output_filename"] = output_filename
-        if output_filename not in already_scored:
-            to_process.append(c)
+        to_process.append(c)
+
+    # Apply max_files limit AFTER dedup
+    if MAX_FILES and len(to_process) > MAX_FILES:
+        to_process = to_process[:MAX_FILES]
 
     skipped = len(candidates) - len(to_process)
     if skipped > 0:
-        print(f"  Skipping {skipped} already-scored files (restart support)")
-    print(f"  Processing {len(to_process)} remaining candidates")
+        print(f"  Skipping {skipped} already-scored or duplicate files")
+    print(f"  Processing {len(to_process)} candidates this run (max_files={MAX_FILES})")
     print()
 
     if not to_process:
