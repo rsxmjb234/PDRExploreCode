@@ -31,7 +31,12 @@ AWS_PROFILE = "default"
 
 # Input: Athena candidate CSV (exported from findcandidatesforexplore.sql)
 # Must have columns: assigning_authority, qe, bucket, key, size, last_modified
-CANDIDATES_CSV = "PROD-CodingQuality-Candidates.csv"
+# For first run: using the same candidates as findandsaveEHRfromCCD-EntireCCD.py
+CANDIDATES_CSV = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "Export-Athena-10-ccds-per-source.csv"
+)
 
 # Allowed PROD buckets (same as findandsaveEHRfromCCD-EntireCCD.py)
 ALLOWED_BUCKETS = [
@@ -77,7 +82,11 @@ def main():
     print()
 
     # Check candidates CSV exists
-    candidates_path = os.path.join(BASE_DIR, CANDIDATES_CSV)
+    candidates_path = CANDIDATES_CSV
+    if not os.path.exists(candidates_path):
+        # Try relative to BASE_DIR as fallback
+        candidates_path = os.path.join(BASE_DIR, os.path.basename(CANDIDATES_CSV))
+    
     if not os.path.exists(candidates_path):
         print(f"ERROR: Candidates CSV not found: {candidates_path}")
         print()

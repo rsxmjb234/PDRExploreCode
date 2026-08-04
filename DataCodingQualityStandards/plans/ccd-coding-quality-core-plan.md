@@ -125,7 +125,32 @@ In PROD with real Epic/Cerner data, expect the full 90%+ range.
 5. Report: HTML files grouped by QE, worst sources first
 
 
-## Output JSON Schema (per CCD)
+## Code System Discovery (per section)
+
+For each section, we record every distinct code system OID found and how many
+entries used it. This tells us exactly what coding is in use — even if we don't
+classify it as standard or local.
+
+Example: if we score 36 lab entries and find:
+  - 26 use LOINC (2.16.840.1.113883.6.1)
+  - 10 use some facility OID (1.2.3.4.5.local)
+
+The JSON output will contain:
+```json
+"code_systems_discovered": {
+  "labs_results": {
+    "2.16.840.1.113883.6.1": {"name": "LOINC", "count": 26, "is_national": true},
+    "1.2.3.4.5.local": {"name": "(unknown)", "count": 10, "is_national": false}
+  },
+  "medications": {
+    "2.16.840.1.113883.6.88": {"name": "RxNorm", "count": 8, "is_national": true}
+  }
+}
+```
+
+This data is NOT surfaced in HTML reports yet — it's stored in the JSON for
+future analysis (e.g., building mapping tables for local code systems,
+understanding which vendors use which coding, etc.).
 
 ```json
 {

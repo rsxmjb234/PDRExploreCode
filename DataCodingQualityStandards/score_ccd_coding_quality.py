@@ -39,20 +39,25 @@ def score_ccd(xml_path, source_metadata=None):
 
     domain_counts = {}
     local_systems = Counter()
+    code_systems_discovered = {}
 
     for seg_key, sec_def in SECTIONS.items():
         if seg_key == "demographics":
             counts, locals_found = _score_demographics(root, sec_def)
+            discovered = {}  # Demographics doesn't have rich discovery
         elif seg_key in section_elements:
-            counts, locals_found = _score_section(
+            counts, locals_found, discovered = _score_section(
                 section_elements[seg_key], sec_def
             )
         else:
             counts = {"total": 0, "standard": 0, "local": 0, "missing": 0, "section_absent": True}
             locals_found = {}
+            discovered = {}
 
         domain_counts[seg_key] = counts
         local_systems.update(locals_found)
+        if discovered:
+            code_systems_discovered[seg_key] = discovered
 
     # Summary
     total = sum(dc["total"] for dc in domain_counts.values())
@@ -72,6 +77,7 @@ def score_ccd(xml_path, source_metadata=None):
         },
         "domain_counts": domain_counts,
         "local_code_systems_found": dict(local_systems),
+        "code_systems_discovered": code_systems_discovered,
     }
 
 
@@ -101,40 +107,62 @@ def _find_sections(root):
 def _score_section(section_element, sec_def):
     """
     Find clinical entries in a section and classify each entry's code.
+    Also records which code systems were discovered (for analysis).
     
     Returns:
-        tuple: (counts_dict, local_systems_counter)
+        tuple: (counts_dict, local_systems_counter, discovered_systems_dict)
     """
     accepted = set(sec_def["accepted"].keys())
-    entry_tag = sec_def["entry_xpath"].split("/")[-1]  # e.g., "observation", "substanceAdministration"
-    code_path = sec_def["code_path"]  # e.g., "code", "value", ".//manufacturedMaterial/code"
+    accepted_names = sec_def["accepted"]  # OID -> name mapping
+    entry_tag = sec_def["entry_xpath"].split("/")[-1]
+    code_path = sec_def["code_path"]
 
     standard = 0
     local = 0
     missing = 0
     local_systems = Counter()
+    discovered = Counter()  # All code systems seen, regardless of classification
 
-    # Find all entry elements of the expected type within this section
     entries = section_element.findall(f".//{{{NS}}}{entry_tag}")
 
     for entry in entries:
-        # Find the code element on this entry
-        classification = _classify_entry_code(entry, code_path, accepted)
+        code_el = _find_code_element(entry, code_path)
+        
+        if code_el is None:
+            missing += 1
+            continue
+        
+        code_system = code_el.get("codeSystem", "")
+        code_val = code_el.get("code", "")
+        null_flavor = code_el.get("nullFlavor", "")
 
+        if null_flavor or (not code_val and not code_system):
+            missing += 1
+            continue
+        
+        # Track every code system we see
+        if code_system:
+            discovered[code_system] += 1
+
+        # Classify
+        classification = _classify_entry_code(entry, code_path, accepted)
         if classification == "standard":
             standard += 1
         elif classification == "local":
             local += 1
-            # Track which local system was used
-            code_el = _find_code_element(entry, code_path)
-            if code_el is not None:
-                sys_oid = code_el.get("codeSystem", "")
-                if sys_oid:
-                    local_systems[sys_oid] += 1
+            if code_system:
+                local_systems[code_system] += 1
         else:
             missing += 1
 
     total = standard + local + missing
+    
+    # Build discovered systems detail
+    discovered_detail = {}
+    for oid, count in discovered.items():
+        is_national = oid in accepted
+        name = accepted_names.get(oid, "(unknown)")
+        discovered_detail[oid] = {"name": name, "count": count, "is_national": is_national}
 
     return {
         "total": total,
@@ -142,7 +170,7 @@ def _score_section(section_element, sec_def):
         "local": local,
         "missing": missing,
         "section_absent": False,
-    }, dict(local_systems)
+    }, dict(local_systems), discovered_detail
 
 
 def _find_code_element(entry, code_path):
