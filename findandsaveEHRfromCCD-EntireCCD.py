@@ -200,6 +200,7 @@ OUTPUT_FIELDS = [
     "EHR_Guess_Confidence",           # High / Medium / Low
     "EHR_Guess_Reason",               # Which fields drove the guess
     "Parse_type",                     # "Entire" or "TopOnly" -- for comparison runs
+    "Data_Type",                      # Always "CCD" — distinguishes from TRN results
 ]
 
 # Constant value for the Parse_type column in this version of the script
@@ -601,6 +602,7 @@ def main():
         fingerprints["Input_Assigning_Authority"] = input_row["assigning_authority"]
         fingerprints["FileSizeBytes"] = file_size
         fingerprints["Parse_type"] = PARSE_TYPE
+        fingerprints["Data_Type"] = "CCD"
 
         # --- Print key signals ---
         print(f"               softwareName: {fingerprints.get('softwareName', '(blank)')[:50]}")

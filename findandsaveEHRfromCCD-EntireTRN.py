@@ -144,6 +144,7 @@ OUTPUT_FIELDS = [
     "MSH3_SendingApplication",        # MSH-3: what software/system sent this
     "MSH4_SendingFacility",           # MSH-4: what organization sent this
     "Parse_type",                     # Always "TRN" for this script
+    "Data_Type",                      # Always "TRN" — distinguishes from CCD results
 ]
 
 PARSE_TYPE = "TRN"
@@ -456,6 +457,7 @@ def main():
             "MSH3_SendingApplication": signals["MSH3_SendingApplication"],
             "MSH4_SendingFacility": signals["MSH4_SendingFacility"],
             "Parse_type": PARSE_TYPE,
+            "Data_Type": "TRN",
         }
 
         print(f"               MSH-3 (App):      {row['MSH3_SendingApplication'][:50]}")
