@@ -15,7 +15,8 @@ CREATE EXTERNAL TABLE IF NOT EXISTS pdr_inventory.ehr_software_analysis (
     ehr_guess                         STRING,
     ehr_guess_confidence              STRING,
     ehr_guess_reason                  STRING,
-    parse_type                        STRING
+    parse_type                        STRING,
+    qe_aa                             STRING
 )
 ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
 WITH SERDEPROPERTIES (
