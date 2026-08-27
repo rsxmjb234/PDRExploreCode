@@ -126,8 +126,11 @@ _date_stamp = datetime.now().strftime("%m-%d-%Y")
 _base, _ext = os.path.splitext(OUTPUT_CSV_FILENAME)
 OUTPUT_CSV_FILENAME = f"{_base}_{_date_stamp}{_ext}"
 
-INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), INPUT_CSV_FILENAME)
-OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_CSV_FILENAME)
+INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "05-Candidates", INPUT_CSV_FILENAME)
+OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "04-Results", OUTPUT_CSV_FILENAME)
+
+# Ensure Results folder exists
+os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
 
 
 # ============================================================================

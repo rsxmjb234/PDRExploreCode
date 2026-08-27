@@ -1,35 +1,31 @@
-# S3 Data Access Skill
+# S3 Data Access
 
-## Description
-Connect to AWS S3 and read CCD documents using boto3 with named profiles.
-
-## Key Knowledge
-
-### Authentication
-We use AWS CLI named profiles (not environment variables or IAM roles):
+## How we connect to S3
 ```python
-session = boto3.Session(profile_name="student1")
+session = boto3.Session(profile_name="student1")  # DEV
+session = boto3.Session(profile_name="default")   # PROD
 s3 = session.client("s3")
 ```
 
-### Profiles
-- DEV: `student1` — access to `nyec.ccda.learning` bucket
-- PROD: `dan-prod` — access to `nyec-pdr-prod-hixny` bucket
+## DEV Bucket
+- `nyec.ccda.learning` — Synthea test data
+- Prefix: `RawCCDs/` for source CCDs
 
-### Reading a CCD
+## PROD Buckets (12 total)
+- `nyec-pdr-prod-hixny` / `-part2`
+- `nyec-pdr-prod-bronx` / `-part2`
+- `nyec-pdr-prod-healtheconnections` / `-part2`
+- `nyec-pdr-prod-healthix` / `-part2`
+- `nyec-pdr-prod-rochester` / `-part2`
+- `nyec-pdr-prod-techbd` / `-part2`
+
+## Reading a file
 ```python
-response = s3.get_object(Bucket=bucket, Key=s3_key)
-xml_bytes = response["Body"].read()
+response = s3.get_object(Bucket=bucket, Key=key)
+content = response["Body"].read()
 ```
 
-### Listing Objects
-```python
-response = s3.list_objects_v2(Bucket=bucket, Prefix="RawCCDs/", MaxKeys=10)
-for obj in response.get("Contents", []):
-    print(obj["Key"])
-```
-
-### Important Notes
-- CCDs are kept in memory only (never written to local disk)
-- S3 keys come from input CSVs (Athena export or DEV utility)
-- Always handle download errors gracefully and continue to next file
+## Key pattern
+- Candidate CSVs have: `assigning_authority, qe, bucket, key, size, last_modified`
+- PROD: each row specifies its own bucket
+- DEV: uses `default_bucket` configuration

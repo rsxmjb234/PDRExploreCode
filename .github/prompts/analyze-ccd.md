@@ -1,21 +1,19 @@
-# Analyze CCD Document
+# Analyze a CCD Document
 
-Analyze a CCD XML document from S3 and determine the likely EHR vendor.
+Download a CCD from S3, parse it, and extract the relevant signals for the current investigation.
 
-## Steps
-1. Download the CCD from the specified S3 path
-2. Parse the XML and extract these signals:
-   - `assignedAuthoringDevice/softwareName`
-   - `assignedAuthoringDevice/manufacturerModelName`
-   - `custodian/.../representedCustodianOrganization/name`
-   - All `templateId` OIDs
-   - Section order (LOINC codes)
-   - OID families (looking for 1.2.840.114350 = Epic)
-   - XML formatting style (indentation)
-3. Score the signals against known Epic patterns
-4. Report classification: EPIC, NOT-EPIC, or NOT SURE
+## Pattern
+1. Read the candidate CSV for the S3 path (bucket + key)
+2. Download using boto3 with the active AWS profile
+3. Parse the XML using ElementTree
+4. Extract signals relevant to the user story:
+   - **FindEHR**: softwareName, manufacturerModelName → classify vendor
+   - **CodingQuality**: code elements per section → classify as Standard/Local/Missing
+   - **42CFR**: diagnoses, medications, encounters → count SUD-related entries
+5. Write result (JSON or CSV row)
 
 ## Variables
-- `$S3_BUCKET` — The S3 bucket to read from
-- `$S3_KEY` — The object key (path) within the bucket
-- `$AWS_PROFILE` — The AWS CLI profile to use for authentication
+- `$AWS_PROFILE` — The AWS CLI profile to use
+- `$BUCKET` — The S3 bucket
+- `$KEY` — The S3 object key
+- `$USER_STORY` — Which analysis to run (FindEHR / CodingQuality / 42CFR)

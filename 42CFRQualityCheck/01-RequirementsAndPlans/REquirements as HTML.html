@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explore — 42 CFR Part 2 Candidate Identification</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(145deg, #f5ede0 0%, #efe3cd 55%, #e6d0a9 100%);
+            margin: 0;
+            color: #2f2218;
+        }
+        header {
+            background: linear-gradient(130deg, #3d2b1f 0%, #6a4524 100%);
+            color: #fff;
+            padding: 2.2rem 1.2rem 1.4rem;
+            text-align: center;
+        }
+        header h1 {
+            margin: 0;
+            color: #f7d27d;
+            font-size: 1.9em;
+            letter-spacing: -0.3px;
+        }
+        header p {
+            margin: 0.65rem auto 0;
+            max-width: 880px;
+            color: #e6cfaa;
+            line-height: 1.65;
+            font-size: 1.02em;
+        }
+        .back-link {
+            display: inline-block;
+            margin: 1.2rem 0 0 1.2rem;
+            background: rgba(184,127,42,0.14);
+            color: #6f4b0f;
+            text-decoration: none;
+            border-radius: 999px;
+            border: 1px solid rgba(184,127,42,0.35);
+            padding: 0.42em 0.95em;
+            font-size: 0.88em;
+            font-weight: 700;
+        }
+        .wrap {
+            max-width: 1020px;
+            margin: 1.2rem auto 2.4rem;
+            padding: 0 1.2rem;
+        }
+        .panel {
+            background: #fffdf8;
+            border-radius: 1rem;
+            box-shadow: 0 8px 26px rgba(61, 43, 31, 0.12);
+            border-top: 5px solid #c8a84b;
+            padding: 1.25rem 1.35rem;
+            margin-bottom: 1rem;
+        }
+        .panel h2 {
+            margin: 0 0 0.6rem;
+            font-size: 1.16em;
+            color: #3d2b1f;
+        }
+        .panel h3 {
+            margin: 0.9rem 0 0.4rem;
+            font-size: 1em;
+            color: #5c3a1e;
+        }
+        .panel p, .panel li {
+            color: #4b3a2c;
+            line-height: 1.7;
+            font-size: 0.96em;
+        }
+        .panel ul, .panel ol {
+            margin: 0.4rem 0 0.6rem 1.2rem;
+            padding: 0;
+        }
+        .panel li { margin-bottom: 0.35em; }
+        code { font-family: Consolas, 'Courier New', monospace; }
+        .inline-code {
+            background: #f3ead8;
+            border: 1px solid #dbc8a4;
+            border-radius: 0.3em;
+            padding: 0.12em 0.45em;
+            font-size: 0.9em;
+            font-family: Consolas, 'Courier New', monospace;
+        }
+        .note {
+            margin-top: 0.7rem;
+            background: #fef3d0;
+            border-left: 4px solid #c8a84b;
+            border-radius: 0.5rem;
+            padding: 0.62rem 0.8rem;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        .warn {
+            margin-top: 0.7rem;
+            background: #fef2f2;
+            border-left: 4px solid #dc2626;
+            border-radius: 0.5rem;
+            padding: 0.62rem 0.8rem;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        .kpi {
+            display: grid;
+            gap: 0.65rem;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            margin-top: 0.4rem;
+        }
+        .kpi .item {
+            background: #fff7de;
+            border: 1px solid #e9ca82;
+            border-radius: 0.7rem;
+            padding: 0.72rem 0.8rem;
+        }
+        .kpi .label {
+            font-size: 0.74em;
+            text-transform: uppercase;
+            letter-spacing: 0.9px;
+            color: #815b1d;
+            font-weight: 700;
+        }
+        .kpi .value {
+            margin-top: 0.3rem;
+            font-size: 0.87em;
+            color: #433224;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86em;
+            margin-top: 0.5rem;
+        }
+        th, td {
+            border: 1px solid #e6d9c4;
+            padding: 0.5em 0.65em;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: #f9f1e2;
+            font-weight: 700;
+            color: #3d2b1f;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td { color: #4b3a2c; }
+        .workflow-step {
+            display: flex;
+            gap: 0.8rem;
+            align-items: flex-start;
+            margin-bottom: 0.7rem;
+        }
+        .step-num {
+            flex-shrink: 0;
+            width: 1.7rem;
+            height: 1.7rem;
+            background: #5c3a1e;
+            color: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.82em;
+        }
+        .step-content { flex: 1; }
+        .step-content strong { color: #3d2b1f; }
+        .footer {
+            text-align: center;
+            color: #b09060;
+            margin: 2rem 0 1rem 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>42 CFR Part 2 — Candidate Identification</h1>
+    <p>Building a research list for our Qualified Entities: sources whose CCD data shows patterns
+       consistent with substance use disorder treatment, so the QE can look into whether the data
+       needs the confidentiality protections 42 CFR Part 2 requires.</p>
+</header>
+
+<a class="back-link" href="explore.html">&#8592; Back to Explore</a>
+
+<div class="wrap">
+
+    <!-- Question -->
+    <section class="panel">
+        <h2>The Question We're Answering</h2>
+        <p>
+            42 CFR Part 2 protects patient records from federally assisted substance use disorder
+            programs with extra confidentiality requirements — separate consent, storage, and access
+            controls. If a Part 2 program's data flows into the general CCD pipeline instead of the
+            protected one, that's a compliance gap worth knowing about.
+        </p>
+        <p>
+            <strong>The catch:</strong> we can't tell from a CCD alone whether a source is legally a
+            Part 2 program — that requires knowing things like federal funding status and how the
+            facility holds itself out, which aren't visible in clinical data. What we <em>can</em> do is
+            look for clinical content patterns that are consistent with SUD treatment activity, and use
+            that to build a short list of sources worth a phone call.
+        </p>
+        <p>
+            This is a <strong>candidate-finding tool, not a compliance verdict.</strong> We surface the
+            signal; the Qualified Entity does the research and makes the actual call.
+        </p>
+    </section>
+
+    <!-- Why This Matters -->
+    <section class="panel">
+        <h2>Why This Matters</h2>
+        <ul>
+            <li><strong>Compliance exposure:</strong> Part 2 data sitting in the general bucket is
+                queryable without the extra protections federal law requires, regardless of whether
+                anyone has actually queried it yet.</li>
+            <li><strong>Patient trust:</strong> Part 2 exists because substance use patients face real
+                stigma. A misrouted source undermines the consent framework those patients were told
+                they could rely on.</li>
+            <li><strong>We can't fix what we don't know about:</strong> the goal here is visibility —
+                giving QEs a prioritized, evidence-backed list of sources to look into, rather than
+                waiting for an audit to surface the issue.</li>
+            <li><strong>A low bar for inclusion is the right call:</strong> a source that turns out to
+                be fine after a QE looks into it costs us a conversation. A source we never flag because
+                our bar was too high costs us a compliance gap we don't know exists. We'd rather ask a
+                few extra questions than miss the real ones.</li>
+        </ul>
+    </section>
+
+    <!-- What We Look For -->
+    <section class="panel">
+        <h2>What We Look For</h2>
+        <p>Each CCD is checked for a handful of substance-use treatment signals: diagnoses tied to
+           opioid, alcohol, or other substance use disorders; medications used specifically to treat
+           those conditions; treatment-type encounters (detox, intensive outpatient, opioid treatment
+           program visits); and related procedures like drug screening. We also note the facility name
+           and the specific care location within it, since a hospital can contain a dedicated SUD unit
+           even when the hospital overall looks like ordinary general care.</p>
+
+        <div class="note">
+            <strong>Not every signal counts the same.</strong> Some medications (like methadone) are
+            only used in a narrow, tightly regulated treatment context and are a strong signal on their
+            own. Others (like buprenorphine) are also prescribed routinely in general practice, so they
+            carry less weight by themselves. We also only count activity tied to the visit itself —
+            a patient mentioning "I take methadone from my clinic" during an unrelated ER visit is not
+            evidence that the ER is a Part 2 program.
+        </div>
+    </section>
+
+    <!-- Approach -->
+    <section class="panel">
+        <h2>Approach</h2>
+        <div class="kpi">
+            <div class="item">
+                <div class="label">Unit of Analysis</div>
+                <div class="value">Each CCD gets its own score — plus a rollup by source, and by care
+                    location within a source</div>
+            </div>
+            <div class="item">
+                <div class="label">Priority Case</div>
+                <div class="value">A source or unit that looks like ordinary care but shows a
+                    concentrated SUD treatment pattern</div>
+            </div>
+            <div class="item">
+                <div class="label">Bar for the List</div>
+                <div class="value">Deliberately low — inclusion is cheap (a phone call), exclusion of a
+                    real case is not</div>
+            </div>
+            <div class="item">
+                <div class="label">Before Trusting the Results</div>
+                <div class="value">We first test the approach against sources already known to be
+                    Part 2, to confirm it reliably picks them up</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Workflow -->
+    <section class="panel">
+        <h2>Workflow</h2>
+
+        <div class="workflow-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                <strong>Sample CCDs from each source</strong> — same sampling approach used across our
+                other data quality work.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <strong>Score each CCD</strong> for the presence of SUD treatment signals tied to that
+                specific visit — not the patient's broader history.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <strong>Roll results up two ways</strong> — by source overall, and by the specific care
+                location within a source, so a treatment unit inside a general facility doesn't get
+                diluted out of view.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+                <strong>Validate against sources we already know are Part 2</strong> before trusting the
+                approach on the broader population — if known Part 2 sources don't score as candidates,
+                we refine the approach first.
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+                <strong>Build the candidate list</strong> — sources and locations whose pattern is
+                consistent with SUD treatment activity, prioritized by how generic the facility name
+                looks (a source that already sounds like a treatment center is less of a discovery than
+                one that doesn't).
+            </div>
+        </div>
+
+        <div class="workflow-step">
+            <div class="step-num">6</div>
+            <div class="step-content">
+                <strong>Send each QE a summary</strong> explaining what we found for their source and why
+                it's worth a look, along with the source's current S3 routing for context.
+            </div>
+        </div>
+    </section>
+
+    <!-- Outputs -->
+    <section class="panel">
+        <h2>What Comes Out of This</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Output</th>
+                    <th>Audience</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Structured data (per CCD)</strong></td>
+                    <td>Internal analysts</td>
+                    <td>Query patterns across sources, locations, and time to support and refine the
+                        candidate list</td>
+                </tr>
+                <tr>
+                    <td><strong>A short write-up per candidate source</strong></td>
+                    <td>The Qualified Entity</td>
+                    <td>Explains what we found and why it's worth researching, and asks the QE to look
+                        into it and report back</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="note">
+            The QE write-up is a request for research, not an accusation — it says what we observed,
+            why it's a pattern worth asking about, and makes clear that only the QE's follow-up can
+            actually confirm Part 2 status.
+        </div>
+    </section>
+
+    <!-- Edge Cases -->
+    <section class="panel">
+        <h2>Edge Cases We're Accounting For</h2>
+        <ul>
+            <li><strong>A treatment unit inside a general facility:</strong> a hospital can have a
+                dedicated detox or addiction medicine unit that behaves like a Part 2 program even
+                though the hospital as a whole looks like ordinary acute care. We look at the specific
+                care location, not just the source overall, so this doesn't get averaged away.</li>
+            <li><strong>Behavioral health vs. substance use:</strong> a facility with a lot of general
+                psychiatric content but little substance-use content isn't a Part 2 signal — we're
+                specifically looking for substance use disorder patterns, not mental health broadly.</li>
+            <li><strong>Routine office-based treatment:</strong> a primary care practice where a
+                physician occasionally prescribes buprenorphine isn't automatically a Part 2 program.
+                We weigh that signal lightly and look for stronger corroborating evidence before it
+                affects a source's candidacy.</li>
+            <li><strong>Facility name isn't the whole story:</strong> an obviously-named recovery center
+                showing a strong pattern is a confirmation, not a discovery — we're most interested in
+                sources with a generic or unrelated name showing the same pattern, since that's the case
+                most likely to have been missed.</li>
+            <li><strong>Patient history vs. this visit:</strong> a patient telling a provider about past
+                or outside substance use treatment doesn't make that provider a Part 2 program. We only
+                count activity tied to care actually delivered at that visit.</li>
+        </ul>
+    </section>
+
+    <!-- What Happens Next -->
+    <section class="panel">
+        <h2>What Happens With the Candidate List</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Result</th>
+                    <th>What Happens</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Source or location shows a strong SUD pattern</td>
+                    <td>The QE receives a write-up and is asked to research the source and report back
+                        on whether it operates as, or contains, a Part 2 program.</td>
+                </tr>
+                <tr>
+                    <td>QE confirms it is a Part 2 program</td>
+                    <td>The QE and PDR coordinate on rerouting the data to the protected pipeline going
+                        forward.</td>
+                </tr>
+                <tr>
+                    <td>QE researches and determines it is not a Part 2 program</td>
+                    <td>Closed out — no further action. This is an expected and acceptable outcome, not
+                        a failure of the approach.</td>
+                </tr>
+                <tr>
+                    <td>Source shows only a weak or borderline pattern</td>
+                    <td>Still included, but flagged as lower priority — worth a lighter check rather
+                        than an urgent one.</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="note">
+            <strong>This tool does not move data or change access controls on its own.</strong> It builds
+            a research list. The QE's research and any resulting routing change are separate,
+            deliberate steps that happen after this process.
+        </div>
+    </section>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 Medallion Architecture — Data Processing Demo
+</div>
+
+</body>
+</html>

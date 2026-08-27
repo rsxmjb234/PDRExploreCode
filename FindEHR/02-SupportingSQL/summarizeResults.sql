@@ -56,7 +56,7 @@ total_sources AS (
     SELECT COUNT(*) AS total FROM source_to_ehr
 ),
 
--- Volume: CCDs per qe_aa from inventory (last 30 days)
+-- Volume: CCDs per qe_aa from inventory (last 30 days) — count AND bytes
 source_volume AS (
     SELECT
         regexp_replace(regexp_replace(i.bucket, '^nyec-pdr-prod-', ''), '-part2$', '')
@@ -68,7 +68,8 @@ source_volume AS (
                     ELSE split_part(i.key, '/', 1)
                 END
             ) AS qe_aa,
-        COUNT(*) AS ccd_count_30d
+        COUNT(*) AS ccd_count_30d,
+        SUM(i.size) AS total_bytes_30d
     FROM pdr_inventory.pdr_inventory_prod_data_all i
     CROSS JOIN config c
     WHERE
@@ -81,18 +82,22 @@ source_volume AS (
     GROUP BY 1
 ),
 
--- Sum volume by EHR
+-- Sum volume by EHR (count + bytes)
 ehr_volume AS (
     SELECT
         s.ehr_guess,
-        SUM(v.ccd_count_30d) AS total_ccds_30d
+        SUM(v.ccd_count_30d) AS total_ccds_30d,
+        SUM(v.total_bytes_30d) AS total_bytes_30d
     FROM source_to_ehr s
     LEFT JOIN source_volume v ON s.input_assigning_authority = split_part(v.qe_aa, '|', 2)
     GROUP BY s.ehr_guess
 ),
 
 total_volume AS (
-    SELECT SUM(total_ccds_30d) AS grand_total_30d FROM ehr_volume
+    SELECT
+        SUM(total_ccds_30d) AS grand_total_30d,
+        SUM(total_bytes_30d) AS grand_total_bytes_30d
+    FROM ehr_volume
 )
 
 SELECT
@@ -101,7 +106,12 @@ SELECT
     ROUND(1.0 * c.source_count / t.total, 4) AS pct_of_sources,
     COALESCE(v.total_ccds_30d, 0) AS ccds_last_30_days,
     COALESCE(v.total_ccds_30d * 12, 0) AS projected_annual_ccds,
-    ROUND(1.0 * COALESCE(v.total_ccds_30d, 0) / NULLIF(tv.grand_total_30d, 0), 4) AS pct_of_all_shinny_data
+    ROUND(1.0 * COALESCE(v.total_ccds_30d, 0) / NULLIF(tv.grand_total_30d, 0), 4) AS pct_of_all_shinny_data_by_count,
+    COALESCE(v.total_bytes_30d, 0) AS bytes_last_30_days,
+    ROUND(COALESCE(v.total_bytes_30d, 0) / 1073741824.0, 2) AS gb_last_30_days,
+    COALESCE(v.total_bytes_30d * 12, 0) AS projected_annual_bytes,
+    ROUND(COALESCE(v.total_bytes_30d * 12, 0) / 1099511627776.0, 2) AS projected_annual_tb,
+    ROUND(1.0 * COALESCE(v.total_bytes_30d, 0) / NULLIF(tv.grand_total_bytes_30d, 0), 4) AS pct_of_all_shinny_data_by_bytes
 FROM ehr_counts c
 CROSS JOIN total_sources t
 LEFT JOIN ehr_volume v ON c.ehr_guess = v.ehr_guess

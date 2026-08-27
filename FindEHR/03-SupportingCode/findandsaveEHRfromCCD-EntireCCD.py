@@ -3,32 +3,28 @@ findandsaveEHRfromCCD-EntireCCD.py — Classify Data Sources by EHR Vendor
                                      (FULL FILE DOWNLOAD + XML PARSER)
 
 ================================================================================
+Hi Dan - updated 07.31.2026
+================================================================================
+
+================================================================================
 GOAL
 ================================================================================
-Determine which EHR system (Epic, Cerner, MEDITECH, etc.) is behind each data
-source (Assigning Authority) by analyzing structural fingerprints within CCD
-(Continuity of Care Document) files.
+Determine which EHR system (Epic, Cerner, MEDITECH, Synthea, etc.) is behind
+each data source (Assigning Authority) by analyzing structural fingerprints
+within CCD (Continuity of Care Document) files.
 
 This is the FULL FILE version. It downloads the entire CCD and uses a proper
-XML parser (ElementTree) to extract signals. This is more versatile and
-accurate than the regex-based partial-download approach.
-
-COMPARISON TO findandsaveEHRfromCCD-JustTopOfFile.py:
-  - JustTopOfFile: Downloads first 100KB, uses regex. Faster, less versatile.
-  - EntireCCD (this file): Downloads full file, uses XML parser. Slower, more
-    accurate, can access signals anywhere in the document.
-
-Run both against the same 2000 files to compare real-world speed and accuracy.
+XML parser (ElementTree) to extract signals.
 
 
 ================================================================================
 STRATEGY
 ================================================================================
-1. Read a list of CCD S3 paths from an input CSV
+1. Read a list of CCD S3 paths from an input CSV (with bucket per row)
 2. Download the ENTIRE CCD from S3 (full file, could be 1-10MB+)
-3. Parse the XML with ElementTree and extract signals using XPath
-4. Write all raw signals to an output CSV for downstream analysis
-5. Optionally make a preliminary EHR guess (EPIC / NOT-EPIC / NOT SURE)
+3. Parse the XML with ElementTree and extract softwareName + manufacturerModelName
+4. Classify the EHR vendor using pattern matching on those fields
+5. Write results to an output CSV
 
 
 ================================================================================
@@ -45,25 +41,20 @@ HOW IT WORKS:
   3. Every 200 records, we flush results to disk (append to CSV).
   4. If the script crashes, you lose at most ~200 records of work.
   5. On the next run, it picks up where it left off automatically.
-
-PERFORMANCE NOTE:
-  Loading 100K paths into a Python set uses ~12MB of RAM and takes ~1-2 seconds.
-  The set lookup is O(1) per file. This scales without issue.
+  6. max_files is applied AFTER filtering, so each run processes the NEXT
+     batch, not the first batch.
 
 TO RE-PROCESS EVERYTHING FROM SCRATCH:
   Delete the output CSV file (or rename it) and run again.
 
-TO RE-PROCESS SPECIFIC FILES:
-  Delete those rows from the output CSV and run again.
-
 
 ================================================================================
-SIGNALS WE EXTRACT (from businessidea-rules.html)
+SIGNALS WE EXTRACT
 ================================================================================
 
 1. Software Name
    Where: assignedAuthoringDevice/softwareName
-   What:  Often directly states "Epic" or "EpicCare"
+   What:  Often directly states the vendor (e.g., "Epic", "MEDENT", "Synthea")
 
 2. Manufacturer Model Name
    Where: assignedAuthoringDevice/manufacturerModelName
@@ -71,39 +62,35 @@ SIGNALS WE EXTRACT (from businessidea-rules.html)
 
 3. Custodian Organization Name
    Where: custodian/.../representedCustodianOrganization/name
-   What:  The organization hosting/sending the CCD
+   What:  The organization hosting/sending the CCD (context, not used in guess)
 
-4. Template IDs
-   Where: ClinicalDocument/templateId elements
-   What:  OIDs declaring conformance to CDA standards
 
-5. OID Families
-   Where: Every id/@root attribute throughout the ENTIRE document
-   What:  Epic is assigned OID family 1.2.840.114350
+================================================================================
+EHR CLASSIFICATION LOGIC
+================================================================================
+We match softwareName + manufacturerModelName against known vendor patterns:
+  Synthea, Epic, eClinicalWorks, athenahealth, MEDENT, Cerner, PointClickCare,
+  Netsmart, Practice Fusion, NextGen, Greenway, SigmaCare, Office Practicum,
+  MEDITECH, InterSystems
 
-6. Formatting Style
-   Where: Whitespace/indentation in the XML
-   What:  Epic's serializers produce consistent 2-space indentation
+If no pattern matches => "UNKNOWN" with Low confidence.
 
 
 ================================================================================
 INPUT / OUTPUT
 ================================================================================
 
-INPUT CSV:
-  - PROD must have both "bucket" and "key" columns from the Athena export
-  - DEV may omit "bucket" and use the configured learning bucket
-  - Typically produced by:
-    * makelistofdevdocsfollowingprodcsvformat.py (DEV)
-    * Athena query export (PROD)
+INPUT CSV (from findcandidatesforexplore.sql or DEV-makelistofdevdocsfollowingprodcsvformat.py):
+  Required columns: "bucket", "key"
+  Optional columns: "qe", "assigning_authority"
+  PROD: Each row specifies its own bucket (multi-bucket support)
+  DEV: Can use a default_bucket if CSV omits bucket column
 
 OUTPUT CSV:
-  - One row per input document
-  - Contains extracted signals plus filename, full S3 path, assigning authority
-  - Includes processing time per record (POC diagnostics)
-  - Full S3 path in each row so you know what's done vs. what's left
-  - Output files are named differently from JustTopOfFile version so both
-    can run against the same input without collision
+  One row per document with: Path, FileName, QE, Input_Assigning_Authority,
+  ProcessingTimeMS, FileSizeBytes, Assigning-Authority-ParsedFromS3, OID,
+  softwareName, manufacturerModelName, custodianOrgName,
+  EHR_Guess, EHR_Guess_Confidence, EHR_Guess_Reason, Parse_type
 
 
 ================================================================================
@@ -118,14 +105,13 @@ import io
 import os
 import re
 import time
-from collections import Counter
 
 
 # ============================================================================
 # CHOOSE YOUR PROFILE -- set to "DEV" or "PROD"
 # ============================================================================
 
-ACTIVE_PROFILE = "PROD"
+ACTIVE_PROFILE = "DEV"
 
 # ============================================================================
 # DEV PROFILE -- known good, uses the learning bucket
@@ -135,18 +121,20 @@ DEV = {
     "aws_profile": "student1",
     "default_bucket": "nyec.ccda.learning",
     "allowed_buckets": ["nyec.ccda.learning"],
-    "input_csv": "DEV-upto2000documentsfromdevbucket.csv",
-    "output_csv": "DEV-EHR_Software_Names.csv",   # Different from JustTopOfFile
-    "max_files": 200,
+    "input_csv": "DEV-CandidateS3PathsForEvaluation.csv",
+    "output_csv": "DEV-EHR_Software_Names_EntireCCD.csv",
+    "max_files": 2000,
 }
 
 # ============================================================================
-# PROD PROFILE -- Dan, fill these in for your environment
+# PROD PROFILE -- Multi-bucket, reads bucket from each CSV row
 # ============================================================================
+# Each PROD CSV row must identify its actual S3 bucket (from Athena export).
+# Both primary and -part2 buckets are accepted for the six production QEs.
 
 PROD = {
     "aws_profile": "default",
-    "default_bucket": None,  # PROD rows must specify their actual bucket
+    "default_bucket": None,   # PROD rows must specify their bucket in the CSV
     "allowed_buckets": [
         "nyec-pdr-prod-hixny",
         "nyec-pdr-prod-hixny-part2",
@@ -162,7 +150,7 @@ PROD = {
         "nyec-pdr-prod-healthix-part2",
     ],
     "input_csv": "Export-Athena-10-ccds-per-source.csv",
-    "output_csv": "PROD-EHR_Software_Names_EntireCCD.csv",  # Different from JustTopOfFile
+    "output_csv": "PROD-EHR_Software_Names_EntireCCD.csv",
     "max_files": 30000,
 }
 
@@ -182,8 +170,17 @@ INPUT_CSV_FILENAME = config["input_csv"]
 OUTPUT_CSV_FILENAME = config["output_csv"]
 MAX_FILES = config["max_files"]
 
-INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), INPUT_CSV_FILENAME)
-OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_CSV_FILENAME)
+# Add today's date to output filename: e.g., "PROD-EHR_Software_Names_EntireCCD_07-08-2026.csv"
+from datetime import datetime
+_date_stamp = datetime.now().strftime("%m-%d-%Y")
+_base, _ext = os.path.splitext(OUTPUT_CSV_FILENAME)
+OUTPUT_CSV_FILENAME = f"{_base}_{_date_stamp}{_ext}"
+
+INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "05-Candidates", INPUT_CSV_FILENAME)
+OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "04-Results", OUTPUT_CSV_FILENAME)
+
+# Ensure Results folder exists
+os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
 
 
 # ============================================================================
@@ -193,21 +190,20 @@ OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_CSV
 OUTPUT_FIELDS = [
     "Path",                           # Full S3 path (s3://bucket/key)
     "FileName",                       # Just the filename
+    "QE",                             # QE from input CSV
+    "Input_Assigning_Authority",      # Assigning authority from input CSV
     "ProcessingTimeMS",               # Time to download + extract (milliseconds)
     "FileSizeBytes",                  # Full file size (shows what we're downloading)
-    "Assigning-Authority",            # Source system ID
+    "Assigning-Authority-ParsedFromS3", # Assigning Authority derived from the S3 path
     "OID",                            # Patient ID root OID
     "softwareName",                   # From assignedAuthoringDevice
     "manufacturerModelName",          # Backup software identifier
     "custodianOrgName",               # Organization hosting/sending the CCD
-    "templateIds",                    # All document-level template OIDs
-    "hasEpicOID",                     # YES/NO -- contains 1.2.840.114350?
-    "epicOIDsFound",                  # List of actual Epic OIDs
-    "allOIDFamilies",                 # Unique OID family prefixes
-    "indentStyle",                    # 2-space, 4-space, tabs, mixed, etc.
-    "EHR-Guess",                      # EPIC, NOT-EPIC, or NOT SURE
-    "EHR-GuessReason",                # Why we made that guess
-    "Parse_type",                     # "Entire" or "JustTop" — for comparison runs
+    "EHR_Guess",                      # Canonical EHR vendor name
+    "EHR_Guess_Confidence",           # High / Medium / Low
+    "EHR_Guess_Reason",               # Which fields drove the guess
+    "Parse_type",                     # "Entire" or "TopOnly" -- for comparison runs
+    "Data_Type",                      # Always "CCD" — distinguishes from TRN results
 ]
 
 # Constant value for the Parse_type column in this version of the script
@@ -218,7 +214,6 @@ PARSE_TYPE = "Entire"
 # CONSTANTS
 # ============================================================================
 
-EPIC_OID_FAMILY = "1.2.840.114350"
 CDA_NAMESPACE = "urn:hl7-org:v3"
 FLUSH_EVERY_N_RECORDS = 200
 
@@ -259,13 +254,17 @@ def create_s3_client(profile_name):
 # HELPER: Read Input CSV
 # ============================================================================
 
-def read_input_csv_file(
-    csv_path,
-    default_bucket=None,
-    allowed_buckets=None,
-    max_files=None,
-):
-    """Read bucket/key locations from the input CSV for XML documents."""
+def read_input_csv_file(csv_path, default_bucket=None, allowed_buckets=None, max_files=None):
+    """
+    Read bucket/key locations from the input CSV for XML documents.
+    
+    PROD Athena exports must include separate "bucket" and "key" columns.
+    DEV input may omit "bucket" and use the configured default bucket.
+    A complete s3://bucket/key value in the key column is also accepted.
+    
+    Returns:
+        list of dict: Each item has bucket, key, path, qe, assigning_authority.
+    """
     documents = []
     allowed_buckets = set(allowed_buckets or [])
 
@@ -274,10 +273,12 @@ def read_input_csv_file(
         if not reader.fieldnames:
             raise ValueError("Input CSV has no header row")
 
-        # Athena normally emits lowercase headers, but tolerate casing changes.
+        # Tolerate casing differences in column headers
         header_map = {name.strip().lower(): name for name in reader.fieldnames}
         key_column = header_map.get("key")
         bucket_column = header_map.get("bucket")
+        qe_column = header_map.get("qe")
+        aa_column = header_map.get("assigning_authority")
 
         if not key_column:
             raise ValueError('Input CSV must contain a "key" column')
@@ -290,18 +291,18 @@ def read_input_csv_file(
         for row_number, row in enumerate(reader, start=2):
             raw_key = (row.get(key_column) or "").strip()
             bucket = (row.get(bucket_column) or "").strip() if bucket_column else ""
+            qe = (row.get(qe_column) or "").strip() if qe_column else ""
+            aa = (row.get(aa_column) or "").strip() if aa_column else ""
 
             if not raw_key:
                 continue
 
-            # Also accept a complete s3://bucket/key value in the key column.
+            # Accept complete S3 URIs in the key column
             if raw_key.lower().startswith("s3://"):
                 s3_location = raw_key[5:]
                 parsed_bucket, separator, parsed_key = s3_location.partition("/")
                 if not separator or not parsed_key:
-                    raise ValueError(
-                        f"Invalid S3 URI on CSV row {row_number}: {raw_key}"
-                    )
+                    raise ValueError(f"Invalid S3 URI on CSV row {row_number}: {raw_key}")
                 bucket = bucket or parsed_bucket
                 key = parsed_key
             else:
@@ -309,14 +310,12 @@ def read_input_csv_file(
 
             bucket = bucket or default_bucket
             if not bucket:
-                raise ValueError(
-                    f"Missing bucket on CSV row {row_number} for key: {key}"
-                )
+                raise ValueError(f"Missing bucket on CSV row {row_number} for key: {key}")
 
             if allowed_buckets and bucket not in allowed_buckets:
                 raise ValueError(
                     f"Unexpected bucket on CSV row {row_number}: {bucket}. "
-                    f"Allowed buckets: {', '.join(sorted(allowed_buckets))}"
+                    f"Allowed: {', '.join(sorted(allowed_buckets))}"
                 )
 
             if not key.lower().endswith(".xml"):
@@ -326,46 +325,14 @@ def read_input_csv_file(
                 "bucket": bucket,
                 "key": key,
                 "path": f"s3://{bucket}/{key}",
+                "qe": qe,
+                "assigning_authority": aa,
             })
 
             if max_files and len(documents) >= max_files:
                 break
 
     return documents
-
-
-# ============================================================================
-# HELPER: XML Indentation Style
-# ============================================================================
-
-def detect_xml_indentation_style(raw_xml_text):
-    """Analyze first 200 lines to determine indentation pattern."""
-    lines = raw_xml_text.split("\n")[:200]
-    indent_counts = Counter()
-    for line in lines:
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("<?") or stripped.startswith("<!"):
-            continue
-        leading = line[:len(line) - len(stripped)]
-        if not leading:
-            continue
-        if "\t" in leading:
-            indent_counts["tabs"] += 1
-        else:
-            num_spaces = len(leading)
-            if num_spaces % 2 == 0 and num_spaces <= 20:
-                indent_counts["2-space"] += 1
-            elif num_spaces % 4 == 0:
-                indent_counts["4-space"] += 1
-            else:
-                indent_counts["other"] += 1
-    if not indent_counts:
-        return "none"
-    most_common_style, count = indent_counts.most_common(1)[0]
-    total = sum(indent_counts.values())
-    if total > 0 and count / total >= 0.7:
-        return most_common_style
-    return "mixed"
 
 
 # ============================================================================
@@ -376,81 +343,35 @@ def extract_all_fingerprint_signals(xml_bytes):
     """
     Parse the ENTIRE CCD XML document and extract fingerprint signals using
     proper XPath queries via ElementTree.
-
-    This is more accurate than regex because:
-      - It respects XML namespaces
-      - It traverses the full document tree (all OIDs, not just header)
-      - It handles edge cases (nested elements, attributes in any order)
-
+    
     Args:
         xml_bytes (bytes): The FULL CCD XML file as bytes from S3
-
+    
     Returns:
         dict: Extracted fingerprint signals
     """
-    raw_text = xml_bytes.decode("utf-8", errors="replace")
     tree = ET.parse(io.BytesIO(xml_bytes))
     root = tree.getroot()
     ns = CDA_NAMESPACE
 
-    # =========================================================================
     # SIGNAL 1: Software Name
-    # =========================================================================
     el = root.find(f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}softwareName")
     software_name = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
     # SIGNAL 2: Manufacturer Model Name
-    # =========================================================================
     el = root.find(f".//{{{ns}}}assignedAuthoringDevice/{{{ns}}}manufacturerModelName")
     manufacturer_model = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
     # SIGNAL 3: Custodian Organization Name
-    # =========================================================================
     el = root.find(
         f".//{{{ns}}}custodian/{{{ns}}}assignedCustodian"
         f"/{{{ns}}}representedCustodianOrganization/{{{ns}}}name"
     )
     custodian_org = el.text.strip() if (el is not None and el.text) else ""
 
-    # =========================================================================
-    # SIGNAL 4: Template IDs
-    # =========================================================================
-    template_ids = []
-    for tid in root.findall(f"{{{ns}}}templateId"):
-        oid = tid.get("root", "")
-        ext = tid.get("extension", "")
-        template_ids.append(f"{oid}:{ext}" if ext else oid)
+    # SIGNAL 4: Custodian — already extracted above, no OID scanning needed
 
-    # =========================================================================
-    # SIGNAL 5: OID Families (scans ENTIRE document, not just header)
-    # =========================================================================
-    # This is where full-file parsing shines: we see every OID in the document,
-    # including deep entry-level IDs that the partial-download version misses.
-    all_oids = set()
-    for element in root.iter():
-        root_oid = element.get("root", "")
-        if root_oid and re.match(r"^\d+\.\d+", root_oid):
-            all_oids.add(root_oid)
-
-    epic_oids_found = [o for o in all_oids if o.startswith(EPIC_OID_FAMILY)]
-    has_epic_oid = "YES" if epic_oids_found else "NO"
-
-    oid_families = set()
-    for oid in all_oids:
-        parts = oid.split(".")
-        if len(parts) >= 3:
-            oid_families.add(".".join(parts[:3]))
-
-    # =========================================================================
-    # SIGNAL 6: XML Formatting Style
-    # =========================================================================
-    indent_style = detect_xml_indentation_style(raw_text)
-
-    # =========================================================================
     # METADATA: Assigning Authority and Patient OID
-    # =========================================================================
     patient_id_elements = root.findall(
         f".//{{{ns}}}recordTarget/{{{ns}}}patientRole/{{{ns}}}id"
     )
@@ -471,77 +392,67 @@ def extract_all_fingerprint_signals(xml_bytes):
             patient_oid = first.get("root", "")
 
     return {
-        "Assigning-Authority": assigning_authority,
+        "Assigning-Authority-ParsedFromS3": assigning_authority,
         "OID": patient_oid,
         "softwareName": software_name,
         "manufacturerModelName": manufacturer_model,
         "custodianOrgName": custodian_org,
-        "templateIds": " | ".join(template_ids),
-        "hasEpicOID": has_epic_oid,
-        "epicOIDsFound": " | ".join(sorted(epic_oids_found)[:10]),
-        "allOIDFamilies": " | ".join(sorted(oid_families)[:20]),
-        "indentStyle": indent_style,
     }
 
 
 # ============================================================================
-# HELPER: EHR Classification (Preliminary Guess)
+# HELPER: EHR Classification (Smart Vendor Detection)
 # ============================================================================
 
-def make_preliminary_ehr_guess(fingerprints):
-    """Weighted scoring to guess EPIC / NOT-EPIC / NOT SURE."""
-    score = 0.0
-    reasons = []
-
-    # Software name
-    sw = (fingerprints.get("softwareName", "") + " " +
-          fingerprints.get("manufacturerModelName", "")).lower()
-    if "epic" in sw:
-        score += 0.35
-        reasons.append("softwareName contains 'Epic'")
-    elif "cerner" in sw or "millennium" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'Cerner/Millennium'")
-    elif "meditech" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'MEDITECH'")
-    elif "allscripts" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'Allscripts'")
-    elif "eclinicalworks" in sw or "ecw" in sw:
-        score -= 0.35
-        reasons.append("softwareName contains 'eClinicalWorks'")
-
-    # Epic OID family
-    if fingerprints.get("hasEpicOID") == "YES":
-        score += 0.30
-        reasons.append("has Epic OID (1.2.840.114350)")
-
-    # Standard CCD templateId (only if other signals present)
-    template_str = fingerprints.get("templateIds", "").lower()
-    if "2.16.840.1.113883.10.20.22.1.2" in template_str and score > 0.2:
-        score += 0.05
-        reasons.append("standard CCD templateId with other Epic signals")
-
-    # Formatting style (only if other signals present)
-    if fingerprints.get("indentStyle") == "2-space" and score > 0.1:
-        score += 0.05
-        reasons.append("2-space indentation (consistent with Epic)")
-
-    # Final call
-    if score >= 0.35:
-        guess = "EPIC"
-    elif score <= -0.10:
-        guess = "NOT-EPIC"
-    elif score == 0.0 and not reasons:
-        guess = "NOT SURE"
-        reasons.append("no strong signals detected")
-    else:
-        guess = "NOT SURE"
-        if not reasons:
-            reasons.append("weak or mixed signals")
-
-    return guess, "; ".join(reasons) if reasons else "no signals"
+def classify_ehr_vendor(fingerprints):
+    """
+    Determine the EHR vendor using explicit name matching and OID signals.
+    
+    Returns: (ehr_guess, confidence, reason)
+    """
+    sw = fingerprints.get("softwareName", "").strip()
+    mfr = fingerprints.get("manufacturerModelName", "").strip()
+    
+    sw_lower = sw.lower()
+    mfr_lower = mfr.lower()
+    combined = f"{sw_lower} {mfr_lower}"
+    
+    # --- Rule 2: Explicit EHR product/vendor signals ---
+    vendor_patterns = [
+        ("synthea", "Synthea"),
+        ("epic", "EPIC"),
+        ("eclinicalworks", "eClinicalWorks"),
+        ("athenahealth", "athenahealth"),
+        ("medent", "MEDENT"),
+        ("cerner", "Cerner"),
+        ("millennium", "Cerner"),
+        ("pointclickcare", "PointClickCare"),
+        ("netsmart", "Netsmart"),
+        ("practice fusion", "Practice Fusion"),
+        ("nextgen", "NextGen"),
+        ("greenway", "Greenway"),
+        ("intergy", "Greenway"),
+        ("sigmacare", "SigmaCare"),
+        ("office practicum", "Office Practicum"),
+        ("meditech", "MEDITECH"),
+        ("intersystems", "InterSystems"),
+        ("healthshare", "InterSystems"),
+    ]
+    
+    for pattern, vendor in vendor_patterns:
+        if pattern in combined:
+            return (vendor, "High", f"softwareName='{sw}' / manufacturer='{mfr}'")
+    
+    # --- Rule 3: Generic software name + specific manufacturer ---
+    if "document generation engine" in sw_lower and "athenahealth" in mfr_lower:
+        return ("athenahealth", "High", f"generic sw + manufacturer='{mfr}'")
+    if "ccd generator" in sw_lower and "netsmart" in mfr_lower:
+        return ("Netsmart", "High", f"generic sw + manufacturer='{mfr}'")
+    if "millennium" in sw_lower and "cerner" in mfr_lower:
+        return ("Cerner", "High", f"generic sw + manufacturer='{mfr}'")
+    
+    # --- Rule 5: Unknown ---
+    return ("UNKNOWN", "Low", "no reliable signal in softwareName or OIDs")
 
 
 # ============================================================================
@@ -577,10 +488,9 @@ def main():
     print(f"  Active Profile:   {ACTIVE_PROFILE}")
     print(f"  AWS CLI Profile:  {AWS_PROFILE}")
     if DEFAULT_BUCKET:
-        print(f"  Default S3 Bucket:{DEFAULT_BUCKET}")
+        print(f"  Default Bucket:   {DEFAULT_BUCKET}")
     else:
-        print("  S3 Buckets:       Read from input CSV")
-        print(f"                    {len(ALLOWED_BUCKETS)} allowed buckets")
+        print(f"  S3 Buckets:       Read from input CSV ({len(ALLOWED_BUCKETS)} allowed)")
     print(f"  Input CSV:        {os.path.basename(INPUT_CSV)}")
     print(f"  Output CSV:       {os.path.basename(OUTPUT_CSV)}")
     print(f"  Max files:        {MAX_FILES if MAX_FILES else 'ALL'}")
@@ -593,21 +503,18 @@ def main():
     # STEP 1: Read input CSV
     print("STEP 1: Reading input CSV...")
     try:
-        # Read ALL keys (no limit) — we apply max_files AFTER filtering
-        xml_documents = read_input_csv_file(
+        # Read ALL rows (no limit) — we apply max_files AFTER filtering
+        input_rows = read_input_csv_file(
             INPUT_CSV,
             default_bucket=DEFAULT_BUCKET,
             allowed_buckets=ALLOWED_BUCKETS,
             max_files=None,
         )
-        print(f"  [OK] Found {len(xml_documents)} total documents in input CSV")
-        bucket_counts = Counter(doc["bucket"] for doc in xml_documents)
-        for bucket, count in sorted(bucket_counts.items()):
-            print(f"       {bucket}: {count}")
+        print(f"  [OK] Found {len(input_rows)} total documents in input CSV")
     except Exception as e:
         print(f"  [ERROR] {e}")
         return
-    if not xml_documents:
+    if not input_rows:
         print("  No XML files found. Exiting.")
         return
     print()
@@ -618,22 +525,22 @@ def main():
     initial_processed_count = len(already_processed)
 
     if already_processed:
-        remaining_documents = [
-            doc for doc in xml_documents if doc["path"] not in already_processed
+        remaining_rows = [
+            r for r in input_rows if r["path"] not in already_processed
         ]
-        skipped = len(xml_documents) - len(remaining_documents)
+        skipped = len(input_rows) - len(remaining_rows)
         print(f"  [OK] Found {len(already_processed)} already done, skipping {skipped}")
-        print(f"       {len(remaining_documents)} remaining")
-        xml_documents = remaining_documents
+        print(f"       {len(remaining_rows)} remaining")
+        input_rows = remaining_rows
     else:
         print("  [OK] Starting fresh")
 
     # Apply max_files AFTER filtering — gives us the next batch, not the first batch
-    if MAX_FILES and len(xml_documents) > MAX_FILES:
+    if MAX_FILES and len(input_rows) > MAX_FILES:
         print(f"       Limiting this run to {MAX_FILES} files (max_files setting)")
-        xml_documents = xml_documents[:MAX_FILES]
+        input_rows = input_rows[:MAX_FILES]
 
-    if not xml_documents:
+    if not input_rows:
         print("\n  All files already processed! Nothing to do.")
         print(f"  Output: {OUTPUT_CSV}")
         return
@@ -656,14 +563,14 @@ def main():
     results = []
     run_start_time = time.time()
 
-    for file_index, document in enumerate(xml_documents, 1):
-        bucket = document["bucket"]
-        s3_key = document["key"]
-        s3_path = document["path"]
+    for file_index, input_row in enumerate(input_rows, 1):
+        bucket = input_row["bucket"]
+        s3_key = input_row["key"]
+        s3_path = input_row["path"]
         file_name = os.path.basename(s3_key)
         file_start_time = time.time()
 
-        print(f"  [{file_index:3d}/{len(xml_documents):3d}] {file_name}")
+        print(f"  [{file_index:3d}/{len(input_rows):3d}] {file_name}")
         print(f"               Bucket: {bucket}")
 
         # --- Download ENTIRE file from S3 ---
@@ -694,23 +601,26 @@ def main():
         # --- Add metadata ---
         fingerprints["Path"] = s3_path
         fingerprints["FileName"] = file_name
+        fingerprints["QE"] = input_row["qe"]
+        fingerprints["Input_Assigning_Authority"] = input_row["assigning_authority"]
         fingerprints["FileSizeBytes"] = file_size
         fingerprints["Parse_type"] = PARSE_TYPE
+        fingerprints["Data_Type"] = "CCD"
 
         # --- Print key signals ---
         print(f"               softwareName: {fingerprints.get('softwareName', '(blank)')[:50]}")
-        print(f"               hasEpicOID:   {fingerprints.get('hasEpicOID', '')}")
 
-        # --- Make EHR guess ---
-        ehr_guess, guess_reason = make_preliminary_ehr_guess(fingerprints)
-        fingerprints["EHR-Guess"] = ehr_guess
-        fingerprints["EHR-GuessReason"] = guess_reason
+        # --- Classify EHR vendor ---
+        ehr_guess, confidence, reason = classify_ehr_vendor(fingerprints)
+        fingerprints["EHR_Guess"] = ehr_guess
+        fingerprints["EHR_Guess_Confidence"] = confidence
+        fingerprints["EHR_Guess_Reason"] = reason
 
         # --- Record timing ---
         file_elapsed_ms = int((time.time() - file_start_time) * 1000)
         fingerprints["ProcessingTimeMS"] = file_elapsed_ms
 
-        print(f"               >> EHR Guess:  {ehr_guess} ({guess_reason[:60]}...)")
+        print(f"               >> EHR Guess:  {ehr_guess} [{confidence}] ({reason[:55]}...)")
         print(f"               >> Time: {file_elapsed_ms} ms")
         print()
 
@@ -732,7 +642,7 @@ def main():
 
     # Summary
     total_elapsed_ms = int((time.time() - run_start_time) * 1000)
-    total_processed = len(xml_documents)
+    total_processed = len(input_rows)
     avg_ms = total_elapsed_ms // total_processed if total_processed else 0
     final_csv_count = len(load_already_processed_paths(OUTPUT_CSV))
 
