@@ -194,21 +194,14 @@
     <section class="panel">
         <h2>The Question We're Answering</h2>
         <p>
-            42 CFR Part 2 protects patient records from federally assisted substance use disorder
-            programs with extra confidentiality requirements — separate consent, storage, and access
-            controls. If a Part 2 program's data flows into the general CCD pipeline instead of the
-            protected one, that's a compliance gap worth knowing about.
+            Of the data submitted to the <strong>general bucket</strong> in PDR, do we see indications
+            within the clinical content that any of it actually came from a 42 CFR Part 2 facility?
         </p>
         <p>
-            <strong>The catch:</strong> we can't tell from a CCD alone whether a source is legally a
-            Part 2 program — that requires knowing things like federal funding status and how the
-            facility holds itself out, which aren't visible in clinical data. What we <em>can</em> do is
-            look for clinical content patterns that are consistent with SUD treatment activity, and use
-            that to build a short list of sources worth a phone call.
-        </p>
-        <p>
-            This is a <strong>candidate-finding tool, not a compliance verdict.</strong> We surface the
-            signal; the Qualified Entity does the research and makes the actual call.
+            We know this is imperfect — the nature of 42 CFR means you can't definitively determine
+            Part 2 status from clinical data alone. Our goal is to identify potential data quality
+            issues and send those to the Qualified Entities for research. The QE calls the source,
+            does the legwork, and makes the actual determination.
         </p>
     </section>
 
@@ -254,7 +247,7 @@
 
     <!-- Approach -->
     <section class="panel">
-        <h2>Approach</h2>
+        <h2>Approach at a Glance</h2>
         <div class="kpi">
             <div class="item">
                 <div class="label">Unit of Analysis</div>
@@ -271,70 +264,78 @@
                 <div class="value">Deliberately low — inclusion is cheap (a phone call), exclusion of a
                     real case is not</div>
             </div>
-            <div class="item">
-                <div class="label">Before Trusting the Results</div>
-                <div class="value">We first test the approach against sources already known to be
-                    Part 2, to confirm it reliably picks them up</div>
-            </div>
         </div>
     </section>
 
-    <!-- Workflow -->
+    <!-- Methodology -->
     <section class="panel">
-        <h2>Workflow</h2>
+        <h2>Our Methodology</h2>
+        <p>
+            We don't start by scanning the entire general population for potential Part 2 sources.
+            We start by proving the approach works against sources we <em>already know</em> are Part 2
+            — because QEs have submitted them to the designated 42 CFR endpoint. Then, once we trust
+            the tool, we point it at the general population to find candidates that may have been missed.
+        </p>
 
-        <div class="workflow-step">
-            <div class="step-num">1</div>
-            <div class="step-content">
-                <strong>Sample CCDs from each source</strong> — same sampling approach used across our
-                other data quality work.
-            </div>
-        </div>
+        <h3>Phase 1 — Calibrate Against Known 42 CFR Sources</h3>
+        <ol>
+            <li>Pull a set of sample CCDs from sources that QEs have already submitted into PDR's
+                42 CFR-designated endpoint — these are our "known positives."</li>
+            <li>Run our scoring code against those samples and see whether it correctly identifies them
+                as having a high concentration of SUD treatment activity.</li>
+            <li>If the code doesn't reliably flag known Part 2 sources as candidates, that tells us
+                our indicators or thresholds need adjustment — we iterate until the code does a good
+                job of appropriately identifying sources that are known to be 42 CFR.</li>
+            <li>This phase is about building confidence: if the tool can't find what we already know
+                is there, it's not ready to find what we don't know about yet.</li>
+        </ol>
 
-        <div class="workflow-step">
-            <div class="step-num">2</div>
-            <div class="step-content">
-                <strong>Score each CCD</strong> for the presence of SUD treatment signals tied to that
-                specific visit — not the patient's broader history.
-            </div>
-        </div>
+        <h3>Phase 2 — Sanity Check on General Population</h3>
+        <ol>
+            <li>Run the same code against a sample of sources from the general (non-42-CFR) pipeline.</li>
+            <li>Confirm that ordinary general-care sources score well below the candidate threshold —
+                this guards against a tool that's so loose it flags everything.</li>
+            <li>If too many general sources score as candidates, we tighten the approach before
+                generating the real candidate list.</li>
+        </ol>
 
-        <div class="workflow-step">
-            <div class="step-num">3</div>
-            <div class="step-content">
-                <strong>Roll results up two ways</strong> — by source overall, and by the specific care
-                location within a source, so a treatment unit inside a general facility doesn't get
-                diluted out of view.
-            </div>
-        </div>
+        <h3>Phase 3 — Candidate Identification Run</h3>
+        <ol>
+            <li>Only once Phases 1 and 2 give us confidence that the tool works both ways (finds known
+                positives, doesn't flag obvious negatives) do we run the broader candidate scan.</li>
+            <li>Sources whose pattern is consistent with SUD treatment activity become candidates.</li>
+        </ol>
 
-        <div class="workflow-step">
-            <div class="step-num">4</div>
-            <div class="step-content">
-                <strong>Validate against sources we already know are Part 2</strong> before trusting the
-                approach on the broader population — if known Part 2 sources don't score as candidates,
-                we refine the approach first.
-            </div>
-        </div>
+        <h3>Phase 4 — Craft Letters to the QEs</h3>
+        <ol>
+            <li>For each candidate source, generate a write-up addressed to the responsible QE.</li>
+            <li>The letter lays out our methodology — what we looked for, how we scored it, why we
+                calibrated against known 42 CFR sources first — and then presents the specific
+                evidence for why this particular source warrants investigation.</li>
+            <li>The tone is professional and neutral: here's what we found, here's why it's worth
+                a conversation, please research and let us know.</li>
+        </ol>
 
-        <div class="workflow-step">
-            <div class="step-num">5</div>
-            <div class="step-content">
-                <strong>Build the candidate list</strong> — sources and locations whose pattern is
-                consistent with SUD treatment activity, prioritized by how generic the facility name
-                looks (a source that already sounds like a treatment center is less of a discovery than
-                one that doesn't).
-            </div>
-        </div>
+        <h3>Phase 5 — QE Research and Remediation</h3>
+        <ol>
+            <li>QEs receive the letters and contact the flagged sources to determine whether they
+                operate as (or contain) a Part 2 program.</li>
+            <li>Based on their findings, QEs make changes to submission routing as appropriate —
+                either confirming the source is fine as-is, or rerouting it to the 42 CFR pipeline.</li>
+            <li>QEs notify the PDR team of any retroactive changes needed for data already in the
+                general bucket.</li>
+        </ol>
 
-        <div class="workflow-step">
-            <div class="step-num">6</div>
-            <div class="step-content">
-                <strong>Send each QE a summary</strong> explaining what we found for their source and why
-                it's worth a look, along with the source's current S3 routing for context.
-            </div>
+        <div class="note">
+            <strong>Why this order matters:</strong> if we went straight to scanning the general
+            population without calibrating first, we'd have no way to know whether our results are
+            meaningful. By proving the tool works on known cases first, we can stand behind the
+            candidate list with confidence — and explain to each QE exactly what methodology produced
+            their source's inclusion.
         </div>
     </section>
+
+    <!-- Workflow is covered by the phases above, no need for a separate section -->
 
     <!-- Outputs -->
     <section class="panel">
@@ -355,10 +356,10 @@
                         candidate list</td>
                 </tr>
                 <tr>
-                    <td><strong>A short write-up per candidate source</strong></td>
+                    <td><strong>A write-up per candidate source</strong></td>
                     <td>The Qualified Entity</td>
-                    <td>Explains what we found and why it's worth researching, and asks the QE to look
-                        into it and report back</td>
+                    <td>Explains the methodology used and the specifics about this source that lead us
+                        to believe it needs investigation</td>
                 </tr>
             </tbody>
         </table>
@@ -366,12 +367,14 @@
             The QE write-up is a request for research, not an accusation — it says what we observed,
             why it's a pattern worth asking about, and makes clear that only the QE's follow-up can
             actually confirm Part 2 status.
+            <br><br>
+            <strong>Example:</strong> <a href="sample-qe-letter.html">View a sample letter for Hudson Valley Wellness Associates</a>
         </div>
     </section>
 
     <!-- Edge Cases -->
     <section class="panel">
-        <h2>Edge Cases We're Accounting For</h2>
+        <h2>Cases We Are Accounting For</h2>
         <ul>
             <li><strong>A treatment unit inside a general facility:</strong> a hospital can have a
                 dedicated detox or addiction medicine unit that behaves like a Part 2 program even
