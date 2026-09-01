@@ -338,8 +338,8 @@ def main():
     else:
         # Default: score generated test cases
         base = os.path.dirname(os.path.abspath(__file__))
-        test_dir = os.path.join(base, "DEV-Output", "generated_test_cases")
-        scored_dir = os.path.join(base, "DEV-Output", "scored_results")
+        test_dir = os.path.join(base, os.path.join("..", "06-Results", "Output", "DEV"), "generated_test_cases")
+        scored_dir = os.path.join(base, os.path.join("..", "06-Results", "Output", "DEV"), "scored_results")
 
         print("=" * 75)
         print("CCD Coding Quality — Scorer (entry-focused)")

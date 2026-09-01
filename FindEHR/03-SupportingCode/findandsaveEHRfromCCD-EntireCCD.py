@@ -177,7 +177,8 @@ _base, _ext = os.path.splitext(OUTPUT_CSV_FILENAME)
 OUTPUT_CSV_FILENAME = f"{_base}_{_date_stamp}{_ext}"
 
 INPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "05-Candidates", INPUT_CSV_FILENAME)
-OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "04-Results", OUTPUT_CSV_FILENAME)
+_output_landscape = "DEV" if ACTIVE_PROFILE == "DEV" else "PROD"
+OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "06-Results", "Output", _output_landscape, OUTPUT_CSV_FILENAME)
 
 # Ensure Results folder exists
 os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)

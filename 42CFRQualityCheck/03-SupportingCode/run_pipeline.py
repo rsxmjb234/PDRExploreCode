@@ -18,8 +18,31 @@ import boto3
 import csv
 import json
 import os
+import shutil
 import sys
 import time
+
+
+# ============================================================================
+# Destination for the published "sample" QE letter used by the docs site
+# (ExplainMedallionArch/explore/42cfr-sample-qe-letter.html).
+#
+# *** DEV ONLY ***  This is a documentation/demo convenience. It is never run
+# under PROD, because PROD letters describe real sources and must not be copied
+# into a public docs site. The sample is built from a KNOWN 42 CFR source with
+# its routing status rewritten to "STANDARD" so it reads as a realistic
+# "misrouted Part 2 source" scenario.
+#
+# Set to None to disable publishing entirely.
+# ============================================================================
+
+SAMPLE_LETTER_DEST = os.path.join(
+    "..", "..", "..", "ExplainMedallionArch", "explore", "42cfr-sample-qe-letter.html"
+)
+
+# Routing status text to force onto the sample, so the demo shows a Part 2
+# source sitting in the wrong (standard) pipeline.
+SAMPLE_FORCED_ROUTING_STATUS = "GENERAL BUCKET (potentially misrouted)"
 
 
 # ============================================================================
@@ -37,11 +60,11 @@ DEV = {
     "default_bucket": "nyec.ccda.learning",
     "allowed_buckets": ["nyec.ccda.learning"],
     "input_csv": os.path.join("..", "05-Candidates", "DEV-42CFR-CandidateS3Paths.csv"),
-    "output_dir": os.path.join("..", "06-Results", "DEV-Output"),
-    "output_json_dir": os.path.join("..", "06-Results", "DEV-Output", "scored_jsons"),
-    "output_aggregate_csv": os.path.join("..", "06-Results", "DEV-Output", "aggregate_results.csv"),
-    "output_letters_dir": os.path.join("..", "06-Results", "DEV-Output", "qe_letters"),
-    "max_files": 200,
+    "output_dir": os.path.join("..", "06-Results", "Output", "DEV"),
+    "output_json_dir": os.path.join("..", "06-Results", "Output", "DEV", "scored_jsons"),
+    "output_aggregate_csv": os.path.join("..", "06-Results", "Output", "DEV", "aggregate_results.csv"),
+    "output_letters_dir": os.path.join("..", "06-Results", "Output", "DEV", "qe_letters"),
+    "max_files": 5000,
 }
 
 # ============================================================================
@@ -58,10 +81,10 @@ PROD = {
         "nyec-pdr-prod-hie-buffalo",
     ],
     "input_csv": os.path.join("..", "05-Candidates", "PROD-CandidateS3PathsForEvaluation.csv"),
-    "output_dir": os.path.join("..", "06-Results", "PROD-Output"),
-    "output_json_dir": os.path.join("..", "06-Results", "PROD-Output", "scored_jsons"),
-    "output_aggregate_csv": os.path.join("..", "06-Results", "PROD-Output", "aggregate_results.csv"),
-    "output_letters_dir": os.path.join("..", "06-Results", "PROD-Output", "qe_letters"),
+    "output_dir": os.path.join("..", "06-Results", "Output", "PROD"),
+    "output_json_dir": os.path.join("..", "06-Results", "Output", "PROD", "scored_jsons"),
+    "output_aggregate_csv": os.path.join("..", "06-Results", "Output", "PROD", "aggregate_results.csv"),
+    "output_letters_dir": os.path.join("..", "06-Results", "Output", "PROD", "qe_letters"),
     "max_files": 30000,
 }
 
@@ -82,10 +105,10 @@ def _get_config():
 import run_pipeline_config
 run_pipeline_config.ACTIVE_PROFILE = ACTIVE_PROFILE
 
-from run_pipeline_config import FLUSH_EVERY
+from run_pipeline_config import FLUSH_EVERY, CFR42_BUCKET_MARKERS
 from score_ccd import score_one_ccd
 from aggregate_sources import aggregate
-from generate_qe_letters import generate_letters
+from generate_qe_letters import generate_letters, render_sample_letter
 
 
 def main():
@@ -139,12 +162,100 @@ def main():
         print("STEP 4: Generating QE letters for candidates...")
         print("-" * 70)
         stats_json = cfg["output_aggregate_csv"].replace(".csv", "_gen_pop_stats.json")
-        generate_letters(cfg["output_aggregate_csv"], stats_json, cfg["output_letters_dir"])
+        generated_letters = generate_letters(
+            cfg["output_aggregate_csv"], stats_json, cfg["output_letters_dir"]
+        )
+
+        # -------------------------------------------------------------------
+        # Step 5: Publish one letter as the docs-site sample (DEV ONLY)
+        # -------------------------------------------------------------------
+        print()
+        print("-" * 70)
+        print("STEP 5: Publishing sample QE letter to the docs site (DEV only)...")
+        print("-" * 70)
+        if ACTIVE_PROFILE == "DEV":
+            _publish_sample_letter(generated_letters)
+        else:
+            print(f"  [SKIP] Profile is {ACTIVE_PROFILE}. Sample publishing only runs in DEV.")
 
     print()
     print("=" * 70)
     print("Pipeline complete.")
     print("=" * 70)
+
+
+def _publish_sample_letter(generated_letters):
+    """DEV ONLY. Publish a realistic sample QE letter to the docs site.
+
+    Picks a candidate that is a genuine 42 CFR source, then re-renders its
+    letter with the routing status forced to "standard" — so the docs site
+    demonstrates the scenario we care about: a Part 2 source that landed in
+    the wrong (non-protected) pipeline.
+    """
+    if not SAMPLE_LETTER_DEST:
+        print("  [SKIP] SAMPLE_LETTER_DEST is not set.")
+        return
+
+    if not generated_letters:
+        print("  [SKIP] No letters were generated, nothing to publish as sample.")
+        return
+
+    dest = os.path.abspath(SAMPLE_LETTER_DEST)
+    dest_dir = os.path.dirname(dest)
+    if not os.path.isdir(dest_dir):
+        print(f"  [SKIP] Destination folder not found: {dest_dir}")
+        print(f"         (Expected the ExplainMedallionArch docs project alongside PDRExploreCode.)")
+        return
+
+    # Pick a candidate that is genuinely a 42 CFR source.
+    chosen = _pick_known_42cfr_candidate(generated_letters)
+    if chosen is None:
+        print("  [SKIP] No known-42-CFR candidate found among the letters; "
+              "not publishing a sample (a real misrouted scenario is required).")
+        return
+
+    org = chosen["source"].get("custodian_org_name") or chosen["source"].get("assigning_authority")
+    try:
+        render_sample_letter(chosen, dest, force_routing_status=SAMPLE_FORCED_ROUTING_STATUS)
+        print(f"  [OK] Published sample letter (routing forced to standard):")
+        print(f"       source: {org}")
+        print(f"       to:     {dest}")
+    except OSError as e:
+        print(f"  [ERROR] Could not write sample letter: {e}")
+
+
+# Path/key markers that identify DEV known-Part-2 test data. The DEV candidate
+# set lives under a "42CFRStyleCCDs/" prefix — every file there is a genuine
+# 42 CFR source, which is exactly what we want for the sample.
+KNOWN_42CFR_PATH_MARKERS = ["42cfrstyleccds", "42cfr", "part2", "cfr-part-2"]
+
+
+def _pick_known_42cfr_candidate(generated_letters):
+    """Return the letter entry for a candidate whose data actually sits in the
+    42 CFR pipeline (i.e. a genuine Part 2 source). Prefers the highest-scoring
+    such source. Returns None if none are found."""
+    markers = set(m.lower() for m in (list(CFR42_BUCKET_MARKERS) + KNOWN_42CFR_PATH_MARKERS))
+
+    def is_42cfr(entry):
+        src = entry["source"]
+        # A source already flagged as being in the 42 CFR bucket by the
+        # aggregator's routing check is a genuine Part 2 source.
+        routing = src.get("routing_status", "").lower()
+        if "42 cfr" in routing or "segregated" in routing:
+            return True
+        # Otherwise, check the representative path/bucket/AA against the markers
+        # (in DEV the path prefix "42CFRStyleCCDs/" is the reliable signal).
+        blob = (src.get("path", "") + " " + src.get("bucket", "") + " "
+                + src.get("assigning_authority", "")).lower()
+        return any(m in blob for m in markers)
+
+    known = [e for e in generated_letters if is_42cfr(e)]
+    if not known:
+        return None
+
+    # Prefer the strongest candidate for the most compelling sample.
+    known.sort(key=lambda e: float(e["source"].get("source_score", 0)), reverse=True)
+    return known[0]
 
 
 def _run_scoring(cfg):

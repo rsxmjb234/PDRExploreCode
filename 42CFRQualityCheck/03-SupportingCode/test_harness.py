@@ -7,7 +7,7 @@ Works in both DEV and PROD using the same logic — the only difference
 is where the candidates CSV comes from:
 
   DEV:  Rebuilt fresh each run by calling make_dev_candidates_42cfr.py
-        (lists s3://nyec.ccda.learning/42CFRStyleCCDs/ and RawCCDs/)
+        (lists s3://nyec.ccda.learning/42CFRStyleCCDs/ and 42CFRTesting-Not42CFR/)
   PROD: Already exists — produced by Athena SQL (findcandidates_42cfr.sql)
 
 Both produce the same 5-column CSV with a 'part2' column as ground truth.
@@ -58,7 +58,7 @@ PROD_CANDIDATES_CSV = os.path.join("..", "05-Candidates", "PROD-CandidateS3Paths
 VARIANCE = {
     "DEV": {
         "max_false_negatives": 2,   # DEV synthetic data should mostly work
-        "max_false_positives": 0,   # RawCCDs have no SUD content — zero tolerance
+        "max_false_positives": 0,   # Non-42CFR sources should not trigger
     },
     "PROD": {
         "max_false_negatives": 5,   # real data has edge cases
@@ -134,8 +134,9 @@ def main():
         print("Step 2: Running pipeline...")
         print("-" * 70)
 
-        # Clean previous results first
-        _clean_results()
+        # Pipeline has built-in restart: it skips any CCD already in scored_jsons/.
+        # To force a full re-run, delete 06-Results/{landscape}-Output/scored_jsons/
+        # or use cleanup_run.py
 
         import run_pipeline
         run_pipeline.ACTIVE_PROFILE = LANDSCAPE
@@ -154,9 +155,9 @@ def main():
     print("-" * 70)
 
     if LANDSCAPE == "DEV":
-        agg_csv = os.path.join("..", "06-Results", "DEV-Output", "aggregate_results.csv")
+        agg_csv = os.path.join("..", "06-Results", "Output", "DEV", "aggregate_results.csv")
     else:
-        agg_csv = os.path.join("..", "06-Results", "PROD-Output", "aggregate_results.csv")
+        agg_csv = os.path.join("..", "06-Results", "Output", "PROD", "aggregate_results.csv")
 
     if not os.path.isfile(agg_csv):
         print(f"  [FAIL] Aggregate results not found: {os.path.abspath(agg_csv)}")
@@ -200,7 +201,7 @@ def main():
     for row in results:
         aa = row.get("assigning_authority", "")
         classification = row.get("classification", "")
-        is_candidate = "CANDIDATE" in classification
+        is_candidate = classification.startswith("CANDIDATE")
 
         expected = expectations.get(aa)
         if expected is None:
@@ -224,16 +225,16 @@ def main():
     print("-" * 70)
 
     if LANDSCAPE == "DEV":
-        letters_dir = os.path.join("..", "06-Results", "DEV-Output", "qe_letters")
+        letters_dir = os.path.join("..", "06-Results", "Output", "DEV", "qe_letters")
     else:
-        letters_dir = os.path.join("..", "06-Results", "PROD-Output", "qe_letters")
+        letters_dir = os.path.join("..", "06-Results", "Output", "PROD", "qe_letters")
 
     if os.path.isdir(letters_dir):
         letters = [f for f in os.listdir(letters_dir) if f.endswith(".html")]
     else:
         letters = []
 
-    candidate_sources = [r for r in results if "CANDIDATE" in r.get("classification", "")]
+    candidate_sources = [r for r in results if r.get("classification", "").startswith("CANDIDATE")]
 
     print(f"  Letters generated: {len(letters)}")
     print(f"  Sources flagged as CANDIDATE: {len(candidate_sources)}")
@@ -273,7 +274,7 @@ def main():
         print("  FALSE NEGATIVES (should have been flagged):")
         for row in false_negatives:
             print(f"    - {row.get('assigning_authority', '')[:50]:50s} "
-                  f"prev={row.get('sud_prevalence', '?')} "
+                  f"score={row.get('source_score', '?')}/100 "
                   f"class={row.get('classification', '?')}")
         print()
 
@@ -281,7 +282,7 @@ def main():
         print("  FALSE POSITIVES (should NOT have been flagged):")
         for row in false_positives:
             print(f"    - {row.get('assigning_authority', '')[:50]:50s} "
-                  f"prev={row.get('sud_prevalence', '?')} "
+                  f"score={row.get('source_score', '?')}/100 "
                   f"class={row.get('classification', '?')}")
         print()
 
@@ -322,7 +323,7 @@ def main():
         LANDSCAPE, true_positives, true_negatives,
         false_negatives, false_positives, unmatched,
         letters, candidate_sources, allowed, overall,
-        candidates_csv_stats
+        candidates_csv_stats, results, expectations
     )
     print()
 
@@ -336,7 +337,8 @@ def main():
 def _generate_test_report(landscape, true_positives, true_negatives,
                           false_negatives, false_positives, unmatched,
                           letters, candidate_sources, allowed, overall,
-                          candidates_csv_stats):
+                          candidates_csv_stats, all_results_for_report,
+                          expectations_for_report):
     """
     Generate a developer-facing HTML report summarizing test harness results.
     Focus: how accurately does the system score known Part 2 sources as Part 2?
@@ -344,9 +346,9 @@ def _generate_test_report(landscape, true_positives, true_negatives,
     from datetime import date
 
     if landscape == "DEV":
-        output_dir = os.path.join("..", "06-Results", "DEV-Output")
+        output_dir = os.path.join("..", "06-Results", "Output", "DEV")
     else:
-        output_dir = os.path.join("..", "06-Results", "PROD-Output")
+        output_dir = os.path.join("..", "06-Results", "Output", "PROD")
 
     os.makedirs(output_dir, exist_ok=True)
     report_path = os.path.join(output_dir, f"test_harness_report_{date.today().isoformat()}.html")
@@ -378,8 +380,9 @@ def _generate_test_report(landscape, true_positives, true_negatives,
     for row in false_negatives:
         fn_rows += f"""<tr>
             <td>{row.get('assigning_authority', '')}</td>
+            <td>{row.get('custodian_org_name', '')}</td>
             <td>{row.get('qe', '')}</td>
-            <td>{row.get('sud_prevalence', '')}</td>
+            <td>{row.get('source_score', '')}</td>
             <td>{row.get('classification', '')}</td>
             <td>{row.get('top_sud_codes', '')[:80]}</td>
         </tr>"""
@@ -389,8 +392,9 @@ def _generate_test_report(landscape, true_positives, true_negatives,
     for row in false_positives:
         fp_rows += f"""<tr>
             <td>{row.get('assigning_authority', '')}</td>
+            <td>{row.get('custodian_org_name', '')}</td>
             <td>{row.get('qe', '')}</td>
-            <td>{row.get('sud_prevalence', '')}</td>
+            <td>{row.get('source_score', '')}</td>
             <td>{row.get('classification', '')}</td>
             <td>{row.get('top_sud_codes', '')[:80]}</td>
         </tr>"""
@@ -404,7 +408,7 @@ def _generate_test_report(landscape, true_positives, true_negatives,
                as NOT A CANDIDATE. This means our checkers are too strict or the CCDs lack
                the expected signals.</p>
             <table>
-                <thead><tr><th>AA</th><th>QE</th><th>SUD Prev</th><th>Classification</th><th>Top Codes</th></tr></thead>
+                <thead><tr><th>AA</th><th>Custodian Org</th><th>QE</th><th>Score</th><th>Classification</th><th>Top Codes</th></tr></thead>
                 <tbody>{fn_rows}</tbody>
             </table>
         </div>"""
@@ -417,10 +421,57 @@ def _generate_test_report(landscape, true_positives, true_negatives,
             <p>These sources are known to be general care (part2=No) but our code scored
                them as CANDIDATE. This means our checkers are too loose for these cases.</p>
             <table>
-                <thead><tr><th>AA</th><th>QE</th><th>SUD Prev</th><th>Classification</th><th>Top Codes</th></tr></thead>
+                <thead><tr><th>AA</th><th>Custodian Org</th><th>QE</th><th>Score</th><th>Classification</th><th>Top Codes</th></tr></thead>
                 <tbody>{fp_rows}</tbody>
             </table>
         </div>"""
+
+    # Build the full source detail table (every AA evaluated)
+    all_source_rows = ""
+    for row in all_results_for_report:
+        aa = row.get("assigning_authority", "")
+        org = row.get("custodian_org_name", "")
+        addr = row.get("custodian_org_address", "")[:50]
+        qe_val = row.get("qe", "")
+        score = row.get("source_score", "")
+        prev = row.get("sud_prevalence", "")
+        strong = row.get("strong_signal_prevalence", "")
+        classification = row.get("classification", "")
+        ccds = row.get("ccds_sampled", "")
+        top = row.get("top_sud_codes", "")[:60]
+
+        # Determine expected and actual
+        expected = expectations_for_report.get(aa)
+        if expected is None:
+            expected_label = "?"
+        elif expected:
+            expected_label = "CANDIDATE"
+        else:
+            expected_label = "NOT CANDIDATE"
+
+        is_candidate = classification.startswith("CANDIDATE")
+        if expected is not None and expected == is_candidate:
+            result_class = "pass"
+            result_label = "CORRECT"
+        elif expected is None:
+            result_class = ""
+            result_label = "—"
+        else:
+            result_class = "fail"
+            result_label = "WRONG"
+
+        all_source_rows += f"""<tr>
+            <td>{org if org else aa}</td>
+            <td>{addr}</td>
+            <td>{qe_val}</td>
+            <td>{ccds}</td>
+            <td>{score}</td>
+            <td>{prev}</td>
+            <td>{strong}</td>
+            <td>{classification}</td>
+            <td>{expected_label}</td>
+            <td class="{result_class}">{result_label}</td>
+        </tr>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -553,6 +604,28 @@ def _generate_test_report(landscape, true_positives, true_negatives,
     {fn_section}
     {fp_section}
 
+    <section class="panel">
+        <h2>All Sources Evaluated</h2>
+        <p>Every assigning authority scored in this run, with real facility identity from the CCD:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Facility Name</th>
+                    <th>Address</th>
+                    <th>QE</th>
+                    <th>CCDs</th>
+                    <th>Score</th>
+                    <th>SUD Prev</th>
+                    <th>Strong Prev</th>
+                    <th>Classification</th>
+                    <th>Expected</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>{all_source_rows}</tbody>
+        </table>
+    </section>
+
 </div>
 
 <div class="footer">
@@ -593,36 +666,6 @@ def _rebuild_dev_candidates():
         if result.stderr:
             print(f"  {result.stderr[:500]}")
         sys.exit(1)
-
-
-# ============================================================================
-# Clean previous results
-# ============================================================================
-
-def _clean_results():
-    """Remove previous scoring results so we start fresh."""
-    if LANDSCAPE == "DEV":
-        output_dir = os.path.join("..", "06-Results", "DEV-Output")
-    else:
-        output_dir = os.path.join("..", "06-Results", "PROD-Output")
-
-    if not os.path.isdir(output_dir):
-        return
-
-    # Delete contents (keep the top-level folder for OneDrive compatibility)
-    for root, dirs, files in os.walk(output_dir, topdown=False):
-        for f in files:
-            try:
-                os.remove(os.path.join(root, f))
-            except OSError:
-                pass
-        for d in dirs:
-            try:
-                os.rmdir(os.path.join(root, d))
-            except OSError:
-                pass
-
-    print(f"  Cleaned previous results from: {output_dir}")
 
 
 # ============================================================================

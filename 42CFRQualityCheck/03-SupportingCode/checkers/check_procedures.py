@@ -21,7 +21,9 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from run_pipeline_config import PROCEDURE_SUD_KEYWORDS
+from run_pipeline_config import PROCEDURE_SUD_KEYWORDS, SNOMED_SUD_PROCEDURES
+
+_SNOMED_PROC_SET = set(SNOMED_SUD_PROCEDURES)
 
 
 def check(root, ns):
@@ -45,6 +47,20 @@ def check(root, ns):
 
     for procedure in proc_section.iter(f"{{{ns}}}procedure"):
         description = _get_procedure_description(procedure, ns)
+        # SNOMED code match (backstop for coded procedures)
+        matched_by_code = False
+        for code_el in procedure.iter(f"{{{ns}}}code"):
+            if code_el.get("code", "") in _SNOMED_PROC_SET:
+                matched_by_code = True
+                if not description:
+                    description = code_el.get("displayName", "") or "SUD-related procedure"
+                break
+
+        if matched_by_code:
+            if description not in found_descriptions:
+                found_descriptions.append(description)
+            continue
+
         if not description:
             continue
 
@@ -72,6 +88,7 @@ def check(root, ns):
     return {
         "sud_procedures_count": len(found_descriptions),
         "sud_procedure_descriptions": "|".join(found_descriptions) if found_descriptions else "",
+        "sud_procedure_findings": [f"{d} (Procedure)" for d in found_descriptions],
     }
 
 

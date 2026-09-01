@@ -18,7 +18,9 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from run_pipeline_config import ENCOUNTER_SUD_KEYWORDS
+from run_pipeline_config import ENCOUNTER_SUD_KEYWORDS, SNOMED_SUD_ENCOUNTERS
+
+_SNOMED_ENC_SET = set(SNOMED_SUD_ENCOUNTERS)
 
 
 def check(root, ns):
@@ -42,6 +44,20 @@ def check(root, ns):
 
     for encounter in enc_section.iter(f"{{{ns}}}encounter"):
         description = _get_encounter_description(encounter, ns)
+        # SNOMED code match (backstop for coded encounters)
+        matched_by_code = False
+        for code_el in encounter.iter(f"{{{ns}}}code"):
+            if code_el.get("code", "") in _SNOMED_ENC_SET:
+                matched_by_code = True
+                if not description:
+                    description = code_el.get("displayName", "") or "SUD treatment encounter"
+                break
+
+        if matched_by_code:
+            if description not in found_descriptions:
+                found_descriptions.append(description)
+            continue
+
         if not description:
             continue
 
@@ -55,6 +71,7 @@ def check(root, ns):
     return {
         "sud_encounters_count": len(found_descriptions),
         "sud_encounter_descriptions": "|".join(found_descriptions) if found_descriptions else "",
+        "sud_encounter_findings": [f"{d} (Encounter)" for d in found_descriptions],
     }
 
 

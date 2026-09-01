@@ -29,7 +29,7 @@ MAX_FILES = None  # None = list ALL XMLs in the test folder
 
 OUTPUT_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "DEV-Output",
+    os.path.join("..", "06-Results", "Output", "DEV"),
     "DEV-CodingQuality-Candidates.csv"
 )
 
@@ -76,7 +76,7 @@ def main():
             expected_json_name = os.path.basename(item["key"]).replace(".xml", "_expected.json")
             expected_json_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                "DEV-Output",
+                os.path.join("..", "06-Results", "Output", "DEV"),
                 "generated_test_cases",
                 expected_json_name
             )

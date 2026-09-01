@@ -21,7 +21,7 @@ from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_FILE = os.path.join(BASE_DIR, "..", "exampleof5aaforeveryqe.txt")
-SCORED_DIR = os.path.join(BASE_DIR, "DEV-Output", "scored_results")
+SCORED_DIR = os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), "scored_results")
 
 
 def tier_for_pct(pct):

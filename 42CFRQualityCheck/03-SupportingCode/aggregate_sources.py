@@ -33,6 +33,7 @@ from collections import defaultdict
 
 from run_pipeline_config import (
     get_config,
+    SCORE_STRONG_CCD_WEIGHT_BONUS,
     THRESHOLD_HIGH,
     THRESHOLD_MODERATE,
     THRESHOLD_LOW,
@@ -105,7 +106,7 @@ def aggregate(json_dir, output_csv_path):
     }
     aggregate_rows.sort(key=lambda r: (
         classification_order.get(r["classification"], 9),
-        -r["sud_prevalence"],
+        -r["source_score"],
     ))
 
     # -----------------------------------------------------------------------
@@ -121,7 +122,7 @@ def aggregate(json_dir, output_csv_path):
     print(f"     Sources evaluated: {len(source_groups)}")
     print(f"     Locations evaluated: {len(location_groups)}")
 
-    candidates = [r for r in aggregate_rows if "CANDIDATE" in r["classification"]]
+    candidates = [r for r in aggregate_rows if r["classification"].startswith("CANDIDATE")]
     print(f"     Total candidates: {len(candidates)}")
 
     # Write gen pop stats as a small JSON alongside the CSV
@@ -134,7 +135,7 @@ def aggregate(json_dir, output_csv_path):
 
 
 def _compute_group_stats(records, assigning_authority, location, level):
-    """Compute prevalence and classification for a group of CCD records."""
+    """Compute the weighted-average score and classification for a group of CCDs."""
     ccds_sampled = len(records)
     ccds_with_sud = sum(1 for r in records if r.get("has_sud_content", False))
     ccds_with_strong = sum(
@@ -148,8 +149,38 @@ def _compute_group_stats(records, assigning_authority, location, level):
     total_indicators = sum(r.get("sud_indicator_count", 0) for r in records)
     avg_indicators = total_indicators / ccds_sampled if ccds_sampled > 0 else 0.0
 
-    # Classification
-    classification = _classify(sud_prevalence, strong_signal_prevalence)
+    # -----------------------------------------------------------------------
+    # Weighted-average source score (0-100)
+    # CCDs with a strong signal get extra weight so a few clearly-Part-2
+    # documents aren't washed out by a larger volume of routine records.
+    # -----------------------------------------------------------------------
+    weighted_sum = 0.0
+    weight_total = 0.0
+    # Per-category weighted sums (for the letter breakdown)
+    cat_sums = {
+        "score_diagnoses": 0.0,
+        "score_medications": 0.0,
+        "score_billing_codes": 0.0,
+        "score_encounters": 0.0,
+        "score_facility_name": 0.0,
+    }
+
+    for r in records:
+        has_strong = r.get("methadone_dispensed", False) or r.get("sud_billing_code_hit", False)
+        w = 1.0 + (SCORE_STRONG_CCD_WEIGHT_BONUS if has_strong else 0.0)
+        weighted_sum += r.get("ccd_score", 0) * w
+        weight_total += w
+        for cat in cat_sums:
+            cat_sums[cat] += r.get(cat, 0) * w
+
+    source_score = weighted_sum / weight_total if weight_total > 0 else 0.0
+    cat_scores = {
+        cat: (cat_sums[cat] / weight_total if weight_total > 0 else 0.0)
+        for cat in cat_sums
+    }
+
+    # Classification is score-based, with the strong-signal override
+    classification = _classify(source_score, strong_signal_prevalence)
 
     # Routing check — use the first record's bucket/path as representative
     first_rec = records[0]
@@ -164,11 +195,24 @@ def _compute_group_stats(records, assigning_authority, location, level):
 
     # Top codes across all CCDs in this group
     all_top_codes = [r.get("top_sud_codes", "") for r in records if r.get("top_sud_codes")]
-    # Flatten, deduplicate, take top 10
     code_parts = []
     for tc in all_top_codes:
         code_parts.extend(tc.split("|"))
     unique_top = list(dict.fromkeys(p for p in code_parts if p))[:10]
+
+    # Human-readable findings across the group, ranked by how many CCDs
+    # they appear in (most common first) so the letter shows the strongest.
+    from collections import Counter
+    finding_counter = Counter()
+    for r in records:
+        raw = r.get("top_sud_findings", "")
+        if not raw:
+            continue
+        for f in dict.fromkeys(raw.split("|")):   # de-dupe within a CCD
+            if f.strip():
+                finding_counter[f.strip()] += 1
+    top_findings = [f"{f}  —  seen in {n} of {ccds_sampled} sampled CCDs"
+                    for f, n in finding_counter.most_common(8)]
 
     return {
         "assigning_authority": assigning_authority,
@@ -181,6 +225,14 @@ def _compute_group_stats(records, assigning_authority, location, level):
         "facility_name_is_generic": facility_name_is_generic,
         "ccds_sampled": ccds_sampled,
         "ccds_with_sud": ccds_with_sud,
+        # Weighted score (headline) and per-category breakdown
+        "source_score": round(source_score, 1),
+        "score_diagnoses": round(cat_scores["score_diagnoses"], 1),
+        "score_medications": round(cat_scores["score_medications"], 1),
+        "score_billing_codes": round(cat_scores["score_billing_codes"], 1),
+        "score_encounters": round(cat_scores["score_encounters"], 1),
+        "score_facility_name": round(cat_scores["score_facility_name"], 1),
+        # Supporting metrics (context)
         "sud_prevalence": round(sud_prevalence, 4),
         "ccds_with_strong_signal": ccds_with_strong,
         "strong_signal_prevalence": round(strong_signal_prevalence, 4),
@@ -188,16 +240,17 @@ def _compute_group_stats(records, assigning_authority, location, level):
         "classification": classification,
         "routing_status": routing_status,
         "top_sud_codes": "|".join(unique_top),
+        "top_sud_findings": "|".join(top_findings),
     }
 
 
-def _classify(sud_prevalence, strong_signal_prevalence):
-    """Apply classification thresholds with strong-signal override."""
-    if sud_prevalence > THRESHOLD_HIGH:
+def _classify(source_score, strong_signal_prevalence):
+    """Apply score-based classification thresholds with strong-signal override."""
+    if source_score >= THRESHOLD_HIGH:
         return "CANDIDATE - HIGH"
-    elif sud_prevalence > THRESHOLD_MODERATE:
+    elif source_score >= THRESHOLD_MODERATE:
         return "CANDIDATE - MODERATE"
-    elif sud_prevalence > THRESHOLD_LOW:
+    elif source_score >= THRESHOLD_LOW:
         return "CANDIDATE - LOW"
     elif STRONG_SIGNAL_OVERRIDE and strong_signal_prevalence > 0:
         # Override: any strong signal makes it at least LOW
@@ -224,26 +277,26 @@ def _compute_general_population_stats(aggregate_rows):
     if not non_candidates:
         return {
             "non_candidate_count": 0,
+            "avg_source_score": 0.0,
+            "max_source_score": 0.0,
             "avg_sud_prevalence": 0.0,
             "max_sud_prevalence": 0.0,
             "avg_strong_signal_prevalence": 0.0,
             "max_strong_signal_prevalence": 0.0,
-            "avg_sud_indicator_count": 0.0,
-            "max_sud_indicator_count": 0.0,
         }
 
+    scores = [r["source_score"] for r in non_candidates]
     prevalences = [r["sud_prevalence"] for r in non_candidates]
     strong_prevs = [r["strong_signal_prevalence"] for r in non_candidates]
-    indicator_avgs = [r["avg_sud_indicator_count"] for r in non_candidates]
 
     return {
         "non_candidate_count": len(non_candidates),
+        "avg_source_score": round(sum(scores) / len(scores), 1),
+        "max_source_score": round(max(scores), 1),
         "avg_sud_prevalence": round(sum(prevalences) / len(prevalences), 4),
         "max_sud_prevalence": round(max(prevalences), 4),
         "avg_strong_signal_prevalence": round(sum(strong_prevs) / len(strong_prevs), 4),
         "max_strong_signal_prevalence": round(max(strong_prevs), 4),
-        "avg_sud_indicator_count": round(sum(indicator_avgs) / len(indicator_avgs), 2),
-        "max_sud_indicator_count": round(max(indicator_avgs), 2),
     }
 
 
@@ -317,8 +370,8 @@ if __name__ == "__main__":
         print()
         print("Top candidates:")
         for r in results[:10]:
-            if "CANDIDATE" in r["classification"]:
+            if r["classification"].startswith("CANDIDATE"):
                 print(f"  {r['assigning_authority'][:40]:40s} "
                       f"{r['classification']:22s} "
-                      f"prev={r['sud_prevalence']:.1%} "
+                      f"score={r['source_score']:.0f}/100 "
                       f"strong={r['strong_signal_prevalence']:.1%}")

@@ -1,7 +1,11 @@
 # CSV files — contain S3 paths, patient data references, or run output
 *.csv
 
-# DEV and PROD output — all generated results, nothing tracked
+# All pipeline output — scored JSONs, HTML reports, letters, aggregates
+# Nothing in any Results/Output folder should ever be tracked
+**/06-Results/Output/
+
+# Legacy patterns (in case any remain)
 DEV-Output/
 PROD-Output/
 

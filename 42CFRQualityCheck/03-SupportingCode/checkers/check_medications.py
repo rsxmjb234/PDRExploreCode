@@ -29,7 +29,14 @@ import os
 
 # Add parent dir to path so we can import run_pipeline_config
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from run_pipeline_config import MAT_STRONG, MAT_MODERATE, MAT_WEAK
+from run_pipeline_config import (
+    MAT_STRONG, MAT_MODERATE, MAT_WEAK,
+    RXNORM_MAT_STRONG, RXNORM_MAT_MODERATE, RXNORM_MAT_WEAK,
+)
+
+_RX_STRONG = set(RXNORM_MAT_STRONG)
+_RX_MODERATE = set(RXNORM_MAT_MODERATE)
+_RX_WEAK = set(RXNORM_MAT_WEAK)
 
 
 def check(root, ns):
@@ -48,6 +55,7 @@ def check(root, ns):
     strong_hits = []
     moderate_hits = []
     weak_hits = []
+    findings = []  # human-readable: "Drug name [RxNorm] (Medications)"
 
     # Find the medications section by templateId
     med_section = _find_medications_section(root, ns)
@@ -61,34 +69,31 @@ def check(root, ns):
         if not _is_active_medication(sa, ns):
             continue
 
-        # Get the medication name from manufacturedMaterial/code or name
-        med_name = _extract_medication_name(sa, ns)
-        if not med_name:
+        # Get the medication name AND RxNorm code from manufacturedMaterial
+        med_name, med_code = _extract_medication(sa, ns)
+        if not med_name and not med_code:
             continue
 
         med_name_lower = med_name.lower()
+        label = med_name if med_name else f"RxNorm:{med_code}"
 
-        # Classify by signal strength
+        # Classify by signal strength — match RxNorm code OR name keyword.
         matched = False
-        for keyword in MAT_STRONG:
-            if keyword in med_name_lower:
-                strong_hits.append(med_name)
-                matched = True
-                break
 
-        if not matched:
-            for keyword in MAT_MODERATE:
-                if keyword in med_name_lower:
-                    moderate_hits.append(med_name)
-                    matched = True
-                    break
+        if med_code in _RX_STRONG or any(k in med_name_lower for k in MAT_STRONG):
+            strong_hits.append(label)
+            findings.append(_med_finding(med_name, med_code, "strong"))
+            matched = True
 
-        if not matched:
-            for keyword in MAT_WEAK:
-                if keyword in med_name_lower:
-                    weak_hits.append(med_name)
-                    matched = True
-                    break
+        if not matched and (med_code in _RX_MODERATE or any(k in med_name_lower for k in MAT_MODERATE)):
+            moderate_hits.append(label)
+            findings.append(_med_finding(med_name, med_code, "moderate"))
+            matched = True
+
+        if not matched and (med_code in _RX_WEAK or any(k in med_name_lower for k in MAT_WEAK)):
+            weak_hits.append(label)
+            findings.append(_med_finding(med_name, med_code, "weak"))
+            matched = True
 
     # Deduplicate names for the output field
     all_names = strong_hits + moderate_hits + weak_hits
@@ -101,7 +106,15 @@ def check(root, ns):
         "mat_weak_signal_count": len(weak_hits),
         "methadone_dispensed": len(strong_hits) > 0,
         "mat_medication_names": "|".join(unique_names) if unique_names else "",
+        "mat_medication_findings": findings,
     }
+
+
+def _med_finding(name, code, strength):
+    """Human-readable MAT medication finding."""
+    desc = (name or "").strip() or "(unnamed medication)"
+    code_part = f" [RxNorm {code}]" if code else ""
+    return f"{desc}{code_part} ({strength}-signal MAT, Medications)"
 
 
 def _find_medications_section(root, ns):
@@ -138,35 +151,36 @@ def _is_active_medication(substance_admin, ns):
     return True
 
 
-def _extract_medication_name(substance_admin, ns):
+def _extract_medication(substance_admin, ns):
     """
-    Extract the medication name from a substanceAdministration entry.
+    Extract (name, rxnorm_code) from a substanceAdministration entry.
 
-    Looks in:
-    1. consumable/manufacturedProduct/manufacturedMaterial/code @displayName
-    2. consumable/manufacturedProduct/manufacturedMaterial/code/originalText
-    3. consumable/manufacturedProduct/manufacturedMaterial/name
+    Looks in consumable/manufacturedProduct/manufacturedMaterial/code for both
+    the @code (RxNorm number) and @displayName / originalText / name.
+    Returns a (name, code) tuple; either may be empty string.
     """
-    # Path: consumable -> manufacturedProduct -> manufacturedMaterial
+    name = ""
+    code_val = ""
     for consumable in substance_admin.iter(f"{{{ns}}}consumable"):
         for mp in consumable.iter(f"{{{ns}}}manufacturedProduct"):
             for mm in mp.iter(f"{{{ns}}}manufacturedMaterial"):
-                # Try code displayName first (most common)
                 for code_el in mm.iter(f"{{{ns}}}code"):
+                    if not code_val:
+                        code_val = code_el.get("code", "").strip()
                     display = code_el.get("displayName", "")
-                    if display:
-                        return display.strip()
-                    # Try originalText within code
-                    for ot in code_el.iter(f"{{{ns}}}originalText"):
-                        if ot.text and ot.text.strip():
-                            return ot.text.strip()
-
-                # Try name element
-                for name_el in mm.iter(f"{{{ns}}}name"):
-                    if name_el.text and name_el.text.strip():
-                        return name_el.text.strip()
-
-    return ""
+                    if display and not name:
+                        name = display.strip()
+                    if not name:
+                        for ot in code_el.iter(f"{{{ns}}}originalText"):
+                            if ot.text and ot.text.strip():
+                                name = ot.text.strip()
+                                break
+                if not name:
+                    for name_el in mm.iter(f"{{{ns}}}name"):
+                        if name_el.text and name_el.text.strip():
+                            name = name_el.text.strip()
+                            break
+    return name, code_val
 
 
 # ============================================================================

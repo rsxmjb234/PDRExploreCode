@@ -32,17 +32,20 @@ import argparse
 def get_output_dir():
     parser = argparse.ArgumentParser(description="Generate HTML coding quality reports")
     parser.add_argument("--output-dir", default=None,
-                        help="Output directory (e.g., DEV-Output or PROD-Output)")
+                        help="Output directory (e.g., DEV or PROD)")
     args, _ = parser.parse_known_args()
     
     if args.output_dir:
+        # Allow passing just "DEV" or "PROD" or a full path
+        if args.output_dir in ("DEV", "PROD"):
+            return os.path.join(BASE_DIR, "..", "06-Results", "Output", args.output_dir)
         return os.path.join(BASE_DIR, args.output_dir)
     
     # Auto-detect: prefer PROD if it has results, else DEV
-    prod_scored = os.path.join(BASE_DIR, "PROD-Output", "scored_results")
+    prod_scored = os.path.join(BASE_DIR, "..", "06-Results", "Output", "PROD", "scored_results")
     if os.path.exists(prod_scored) and any(f.endswith("_scored.json") for f in os.listdir(prod_scored)):
-        return os.path.join(BASE_DIR, "PROD-Output")
-    return os.path.join(BASE_DIR, "DEV-Output")
+        return os.path.join(BASE_DIR, "..", "06-Results", "Output", "PROD")
+    return os.path.join(BASE_DIR, "..", "06-Results", "Output", "DEV")
 
 OUTPUT_DIR = get_output_dir()
 SCORED_DIR = os.path.join(OUTPUT_DIR, "scored_results")

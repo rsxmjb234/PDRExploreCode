@@ -31,7 +31,7 @@ def extract(root, ns):
 
     Returns:
         dict with ehr_software_name, custodian_org_name, custodian_org_address,
-        service_location_name, ccd_created_date
+        service_location_name, ccd_created_date, assigning_authority_name
     """
     return {
         "ehr_software_name": _get_ehr_software_name(root, ns),
@@ -39,6 +39,7 @@ def extract(root, ns):
         "custodian_org_address": _get_custodian_org_address(root, ns),
         "service_location_name": _get_service_location_name(root, ns),
         "ccd_created_date": _get_ccd_created_date(root, ns),
+        "assigning_authority_name": _get_assigning_authority_name(root, ns),
     }
 
 
@@ -165,6 +166,19 @@ def _get_ccd_created_date(root, ns):
                 pass
         break  # only check the first effectiveTime (document-level)
 
+    return ""
+
+
+def _get_assigning_authority_name(root, ns):
+    """
+    Extract the assigningAuthorityName from the CCD's first <id> element.
+    Format in the CCD: assigningAuthorityName="qe|assigning_authority"
+    Returns the full value (e.g., "rochester|FLACRA") — caller splits on |.
+    """
+    for el in root.iter(f"{{{ns}}}id" if ns else "id"):
+        aan = el.get("assigningAuthorityName", "")
+        if aan:
+            return aan.strip()
     return ""
 
 

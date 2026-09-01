@@ -34,13 +34,13 @@ import sys
 
 EXPECTED_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "DEV-Output",
+    os.path.join("..", "06-Results", "Output", "DEV"),
     "generated_test_cases"
 )
 
 SCORED_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "DEV-Output",
+    os.path.join("..", "06-Results", "Output", "DEV"),
     "scored_results"
 )
 
@@ -190,7 +190,7 @@ def main():
     # Write validation report
     report_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        "DEV-Output",
+        os.path.join("..", "06-Results", "Output", "DEV"),
         "validation_report.json"
     )
     report = {

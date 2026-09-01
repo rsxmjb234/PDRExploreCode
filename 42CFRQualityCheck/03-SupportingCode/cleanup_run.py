@@ -16,7 +16,6 @@ import shutil
 
 # Add this directory to path so we can import run_pipeline_config
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from run_pipeline_config import DEV, PROD
 
 
 def main():
@@ -33,9 +32,10 @@ def main():
         sys.exit(1)
 
     profile_name = sys.argv[1].upper()
-    cfg = DEV if profile_name == "DEV" else PROD
-
-    output_dir = os.path.abspath(cfg["output_dir"])
+    if profile_name == "DEV":
+        output_dir = os.path.abspath(os.path.join("..", "06-Results", "Output", "DEV"))
+    else:
+        output_dir = os.path.abspath(os.path.join("..", "06-Results", "Output", "PROD"))
 
     print("=" * 60)
     print(f"Cleanup {profile_name} Results")

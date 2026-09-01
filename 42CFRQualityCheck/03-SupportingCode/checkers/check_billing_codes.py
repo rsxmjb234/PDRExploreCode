@@ -43,6 +43,7 @@ def check(root, ns):
         dict with sud_billing_code_hit, sud_billing_code_count, sud_billing_codes_found
     """
     found_codes = []
+    findings = []  # human-readable: "Description [code] (Billing/Procedure Code)"
 
     # Scan every <code> element in the entire document
     for code_el in root.iter(f"{{{ns}}}code"):
@@ -53,6 +54,7 @@ def check(root, ns):
         if _is_sud_billing_code(code_val):
             if code_val not in found_codes:
                 found_codes.append(code_val)
+                findings.append(_bill_finding(code_val, code_el.get("displayName", "")))
 
     # Also check <value> elements (some CCDs put procedure codes there)
     for value_el in root.iter(f"{{{ns}}}value"):
@@ -63,12 +65,20 @@ def check(root, ns):
         if _is_sud_billing_code(code_val):
             if code_val not in found_codes:
                 found_codes.append(code_val)
+                findings.append(_bill_finding(code_val, value_el.get("displayName", "")))
 
     return {
         "sud_billing_code_hit": len(found_codes) > 0,
         "sud_billing_code_count": len(found_codes),
         "sud_billing_codes_found": "|".join(found_codes) if found_codes else "",
+        "sud_billing_findings": findings,
     }
+
+
+def _bill_finding(code, display_name):
+    """Human-readable billing/procedure code finding."""
+    desc = (display_name or "").strip() or "(no description)"
+    return f"{desc} [{code}] (Billing/Procedure Code)"
 
 
 def _is_sud_billing_code(code_val):

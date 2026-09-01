@@ -60,7 +60,7 @@ ALLOWED_BUCKETS = [
 # Output directory
 OUTPUT_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "PROD-Output"
+    "..", "06-Results", "Output", "PROD"
 )
 
 SCORED_DIR = os.path.join(OUTPUT_DIR, "scored_results")
@@ -272,7 +272,7 @@ def main():
 
     report_script = os.path.join(BASE_DIR, "generate_report.py")
     result = subprocess.run(
-        [sys.executable, report_script, "--output-dir", "PROD-Output"],
+        [sys.executable, report_script, "--output-dir", os.path.join("..", "06-Results", "Output", "PROD")],
         cwd=BASE_DIR,
         capture_output=False,
     )

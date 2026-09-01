@@ -17,7 +17,7 @@ S3_PREFIX = "TestDataForDeterminingLevelOfCodeSetQuality/"
 
 LOCAL_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "DEV-Output",
+    os.path.join("..", "06-Results", "Output", "DEV"),
     "generated_test_cases"
 )
 

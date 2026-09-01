@@ -15,8 +15,8 @@ After this, validate_test_cases.py should pass 100%.
 import os
 import json
 
-SCORED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DEV-Output", "scored_results")
-EXPECTED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "DEV-Output", "generated_test_cases")
+SCORED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.path.join("..", "06-Results", "Output", "DEV"), "scored_results")
+EXPECTED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.path.join("..", "06-Results", "Output", "DEV"), "generated_test_cases")
 
 
 def main():

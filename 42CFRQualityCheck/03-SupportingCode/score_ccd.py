@@ -28,6 +28,7 @@ from checkers import check_encounters
 from checkers import check_procedures
 from checkers import check_facility_name
 import extract_identity
+import score_model
 
 
 def score_one_ccd(s3_client, bucket, key, qe="", assigning_authority=""):
@@ -90,6 +91,14 @@ def score_one_ccd(s3_client, bucket, key, qe="", assigning_authority=""):
     facility_result = check_facility_name.check(identity["custodian_org_name"])
 
     # -----------------------------------------------------------------------
+    # Weighted 0-100 score for this CCD (per-category breakdown)
+    # -----------------------------------------------------------------------
+    score = score_model.score_ccd(
+        diag_result, meds_result, billing_result,
+        enc_result, proc_result, facility_result,
+    )
+
+    # -----------------------------------------------------------------------
     # Compute aggregate scores
     # -----------------------------------------------------------------------
     sud_indicator_count = (
@@ -115,15 +124,38 @@ def score_one_ccd(s3_client, bucket, key, qe="", assigning_authority=""):
     if len(top_sud_codes) > 200:
         top_sud_codes = top_sud_codes[:197] + "..."
 
+    # Build top_sud_findings — human-readable "Description [code] (Section)"
+    # entries from every checker. Pipe-delimited so it stays a flat field.
+    finding_parts = []
+    finding_parts.extend(diag_result.get("sud_diagnosis_findings", []))
+    finding_parts.extend(meds_result.get("mat_medication_findings", []))
+    finding_parts.extend(billing_result.get("sud_billing_findings", []))
+    finding_parts.extend(enc_result.get("sud_encounter_findings", []))
+    finding_parts.extend(proc_result.get("sud_procedure_findings", []))
+    # De-dupe while preserving order
+    finding_parts = list(dict.fromkeys(finding_parts))
+    top_sud_findings = "|".join(finding_parts)
+
     # -----------------------------------------------------------------------
     # Assemble flat JSON record
     # -----------------------------------------------------------------------
     elapsed_ms = int((time.time() - start_time) * 1000)
 
+    # Use the assigningAuthorityName from the CCD if available.
+    # Format: "qe|assigning_authority" — override CSV values with CCD values
+    # since the CCD is the authoritative source of this identity.
+    effective_aa = assigning_authority
+    effective_qe = qe
+    aan = identity.get("assigning_authority_name", "")
+    if aan and "|" in aan:
+        parts = aan.split("|", 1)
+        effective_qe = parts[0].strip() or qe
+        effective_aa = parts[1].strip() or assigning_authority
+
     record = {
         # Source identification
-        "assigning_authority": assigning_authority,
-        "qe": qe,
+        "assigning_authority": effective_aa,
+        "qe": effective_qe,
         "bucket": bucket,
         "key": key,
         "path": path,
@@ -139,6 +171,14 @@ def score_one_ccd(s3_client, bucket, key, qe="", assigning_authority=""):
         "processing_time_ms": elapsed_ms,
         "file_size_bytes": file_size,
         "error": "",
+
+        # Weighted 0-100 score and per-category breakdown
+        "ccd_score": score["ccd_score"],
+        "score_diagnoses": score["score_diagnoses"],
+        "score_medications": score["score_medications"],
+        "score_billing_codes": score["score_billing_codes"],
+        "score_encounters": score["score_encounters"],
+        "score_facility_name": score["score_facility_name"],
 
         # Aggregate scores
         "sud_indicator_count": sud_indicator_count,
@@ -163,6 +203,7 @@ def score_one_ccd(s3_client, bucket, key, qe="", assigning_authority=""):
 
         # Top findings summary
         "top_sud_codes": top_sud_codes,
+        "top_sud_findings": top_sud_findings,
     }
 
     return record
@@ -184,6 +225,12 @@ def _error_record(path, bucket, key, qe, aa, error_msg, elapsed_ms, file_size=0)
         "processing_time_ms": elapsed_ms,
         "file_size_bytes": file_size,
         "error": error_msg,
+        "ccd_score": 0,
+        "score_diagnoses": 0,
+        "score_medications": 0,
+        "score_billing_codes": 0,
+        "score_encounters": 0,
+        "score_facility_name": 0,
         "sud_indicator_count": 0,
         "has_sud_content": False,
         "sud_diagnoses_count": 0,
@@ -200,6 +247,7 @@ def _error_record(path, bucket, key, qe, aa, error_msg, elapsed_ms, file_size=0)
         "facility_name_flags": "",
         "facility_name_is_generic": True,
         "top_sud_codes": "",
+        "top_sud_findings": "",
     }
 
 

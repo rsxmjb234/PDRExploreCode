@@ -3,15 +3,16 @@ make_dev_candidates_42cfr.py — Build DEV Candidates CSV (Unified Format)
 =========================================================================
 
 Lists all CCD files from BOTH DEV folders:
-  s3://nyec.ccda.learning/42CFRStyleCCDs/   (known Part 2 sources)
-  s3://nyec.ccda.learning/RawCCDs/          (known non-Part 2 sources)
+  s3://nyec.ccda.learning/42CFRStyleCCDs/        (known Part 2 sources)
+  s3://nyec.ccda.learning/42CFRTesting-Not42CFR/  (known non-Part 2 sources)
+
+Downloads each CCD and parses the assigningAuthorityName field from the
+document's first <id> element to get the real QE and Assigning Authority:
+  assigningAuthorityName="qe|assigning_authority"
+  e.g., "rochester|FLACRA" or "bronx|START TREATMENT AND RECOVERY CENTERS"
 
 Produces a SINGLE CSV with the same columns that PROD uses:
   bucket, key, qe, assigning_authority, part2
-
-The 'part2' column = "Yes" for 42CFRStyleCCDs, "No" for RawCCDs.
-This mirrors the PROD Athena query output (ExampleOfHowDataPathsAreExpressedInPDR.csv)
-so the pipeline and test harness work identically in both landscapes.
 
 Output: ../05-Candidates/DEV-42CFR-CandidateS3Paths.csv
 
@@ -22,6 +23,7 @@ Usage:
 import boto3
 import csv
 import os
+import xml.etree.ElementTree as ET
 
 # ============================================================================
 # Configuration
@@ -35,17 +37,18 @@ POOLS = [
     {
         "prefix": "42CFRStyleCCDs/",
         "part2": "Yes",
-        "qe": "dev-42cfr",
     },
     {
-        "prefix": "RawCCDs/",
+        "prefix": "42CFRTesting-Not42CFR/",
         "part2": "No",
-        "qe": "dev-general",
     },
 ]
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "05-Candidates")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "DEV-42CFR-CandidateS3Paths.csv")
+
+# CDA namespace
+CDA_NS = "urn:hl7-org:v3"
 
 
 def main():
@@ -62,7 +65,7 @@ def main():
     print()
     print("  Pools:")
     for pool in POOLS:
-        print(f"    {pool['prefix']:25s} part2={pool['part2']}")
+        print(f"    {pool['prefix']:30s} part2={pool['part2']}")
     print()
 
     # Connect to S3
@@ -74,23 +77,42 @@ def main():
     for pool in POOLS:
         prefix = pool["prefix"]
         part2 = pool["part2"]
-        qe = pool["qe"]
 
         print(f"  Listing {prefix}...", end=" ")
+        keys = _list_xml_objects(s3, BUCKET, prefix)
+        print(f"{len(keys)} XML files")
 
-        objects = _list_objects(s3, BUCKET, prefix)
-        print(f"{len(objects)} files")
+        print(f"  Parsing assigningAuthorityName from each CCD...")
+        parsed = 0
+        failed = 0
 
-        for obj_key in objects:
+        for key in keys:
+            qe, aa = _get_qe_aa_from_ccd(s3, BUCKET, key)
+
+            if qe and aa:
+                parsed += 1
+            else:
+                failed += 1
+                # Fall back to placeholder if parsing fails
+                qe = qe or "unknown"
+                aa = aa or "unknown"
+
             all_rows.append({
                 "bucket": BUCKET,
-                "key": obj_key,
+                "key": key,
                 "qe": qe,
-                "assigning_authority": _parse_aa_from_key(obj_key, prefix),
+                "assigning_authority": aa,
                 "part2": part2,
             })
 
-    print()
+            # Progress
+            total_done = parsed + failed
+            if total_done % 50 == 0:
+                print(f"    [{total_done}/{len(keys)}] parsed={parsed} failed={failed}")
+
+        print(f"    Done: {parsed} parsed, {failed} failed")
+        print()
+
     print(f"  Total rows: {len(all_rows)}")
 
     if not all_rows:
@@ -128,8 +150,8 @@ def main():
     print("  Column 'part2' = ground truth for the test harness.")
 
 
-def _list_objects(s3, bucket, prefix):
-    """List all non-zero-byte objects under a prefix (paginated)."""
+def _list_xml_objects(s3, bucket, prefix):
+    """List all non-zero-byte XML files under a prefix (paginated)."""
     objects = []
     paginator = s3.get_paginator("list_objects_v2")
 
@@ -138,8 +160,9 @@ def _list_objects(s3, bucket, prefix):
             key = obj["Key"]
             size = obj["Size"]
 
-            # Skip zero-byte folder markers
             if size == 0:
+                continue
+            if not key.lower().endswith(".xml"):
                 continue
 
             objects.append(key)
@@ -147,24 +170,32 @@ def _list_objects(s3, bucket, prefix):
     return objects
 
 
-def _parse_aa_from_key(key, prefix):
+def _get_qe_aa_from_ccd(s3, bucket, key):
     """
-    Try to extract an assigning authority from the S3 key.
-    If the key has a subfolder structure like prefix/someAA/file.xml,
-    use the subfolder. Otherwise derive from the prefix name.
+    Download a CCD and parse the assigningAuthorityName from the first <id>.
+    Format: "qe|assigning_authority" (e.g., "rochester|FLACRA")
+    Returns: (qe, assigning_authority) tuple, or ("", "") on failure.
     """
-    relative = key.replace(prefix, "", 1)
-    parts = relative.split("/")
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        body = obj["Body"].read()
+        root = ET.fromstring(body.decode("utf-8", errors="replace"))
 
-    if len(parts) >= 2:
-        # There's a subfolder — use it as the AA
-        return parts[0]
-    else:
-        # Flat structure — derive from pool prefix
-        if "42CFR" in prefix:
-            return "42cfr-dev"
-        else:
-            return "rawccd-dev"
+        ns = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""
+
+        # Find the first <id> element with assigningAuthorityName
+        for el in root.iter(f"{{{ns}}}id" if ns else "id"):
+            aan = el.get("assigningAuthorityName", "")
+            if aan and "|" in aan:
+                parts = aan.split("|", 1)
+                qe = parts[0].strip()
+                aa = parts[1].strip()
+                return (qe, aa)
+
+        return ("", "")
+
+    except Exception:
+        return ("", "")
 
 
 if __name__ == "__main__":

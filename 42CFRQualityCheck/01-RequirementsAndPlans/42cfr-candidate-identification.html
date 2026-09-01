@@ -194,14 +194,22 @@
     <section class="panel">
         <h2>The Question We're Answering</h2>
         <p>
-            Of the data submitted to the <strong>general bucket</strong> in PDR, do we see indications
-            within the clinical content that any of it actually came from a 42 CFR Part 2 facility?
+            To ensure the SHIN-NY is not releasing 42 CFR Part 2-protected data in error, we ask a
+            simple question of the data submitted to the <strong>standard (non-Part-2) pipeline</strong>:
+            are there sources whose clinical content shows indicators of being a Part 2 substance use
+            disorder treatment program, even though their data was submitted as standard?
         </p>
         <p>
-            We know this is imperfect — the nature of 42 CFR means you can't definitively determine
-            Part 2 status from clinical data alone. Our goal is to identify potential data quality
-            issues and send those to the Qualified Entities for research. The QE calls the source,
-            does the legwork, and makes the actual determination.
+            When we find one, we hand it to the responsible Qualified Entity with a clear message:
+            <em>we are not saying this source is, or is not, Part 2 — we are asking you to look.</em>
+            The QE contacts the source, does the legwork, and makes the actual determination. If a
+            source turns out to be Part 2 but was routed as standard, the QE engages their privacy
+            and security team so we can build a specific remediation plan together.
+        </p>
+        <p>
+            This is imperfect by nature — you can't definitively prove Part 2 status from clinical
+            content alone. So the tool produces a prioritized, evidence-backed <em>research list</em>,
+            not a verdict.
         </p>
     </section>
 
@@ -227,21 +235,77 @@
 
     <!-- What We Look For -->
     <section class="panel">
-        <h2>What We Look For</h2>
-        <p>Each CCD is checked for a handful of substance-use treatment signals: diagnoses tied to
-           opioid, alcohol, or other substance use disorders; medications used specifically to treat
-           those conditions; treatment-type encounters (detox, intensive outpatient, opioid treatment
-           program visits); and related procedures like drug screening. We also note the facility name
-           and the specific care location within it, since a hospital can contain a dedicated SUD unit
-           even when the hospital overall looks like ordinary general care.</p>
+        <h2>What We Look For: The Clinical Signature of an SUD Treatment Facility</h2>
+        <p>A facility whose primary business is treating substance use disorder produces clinical
+           documents that look measurably different from a general medical practice's. Looking across
+           a source's CCDs in aggregate, a treatment program leaves a distinctive, repeating footprint.
+           The code rates each CCD for a high concentration of these signals:</p>
+        <p>Each CCD is scored on a <strong>0&ndash;100 point scale</strong>. Every signal category
+           contributes up to a maximum number of points, and the weights reflect how strongly each
+           category points to a Part 2 treatment facility:</p>
+        <table>
+            <thead>
+                <tr><th>Signal</th><th>Max Points</th><th>Where we find it</th><th>Why this weight</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>SUD diagnoses</strong></td>
+                    <td>25</td>
+                    <td>ICD-10 F10&ndash;F19 (alcohol, opioid, cocaine, polysubstance, etc.),
+                        excluding F17 nicotine</td>
+                    <td>Core clinical indicator &mdash; the reason for care</td>
+                </tr>
+                <tr>
+                    <td><strong>OTP / SUD billing &amp; procedure codes</strong></td>
+                    <td>25</td>
+                    <td>H0020, S0109, H0015, G2067&ndash;G2078, UDS, SBIRT, counseling</td>
+                    <td>Used almost exclusively by treatment programs</td>
+                </tr>
+                <tr>
+                    <td><strong>Treatment-model encounters</strong></td>
+                    <td>25</td>
+                    <td>Detox, intensive outpatient (IOP), residential, recurring OTP visits</td>
+                    <td>Describe a care model, not a one-off event</td>
+                </tr>
+                <tr>
+                    <td><strong>MAT medications</strong></td>
+                    <td>20</td>
+                    <td>Methadone, buprenorphine/suboxone, naltrexone</td>
+                    <td>Methadone is nearly diagnostic (OTP-only for OUD); buprenorphine is weaker
+                        alone (used in office practice too)</td>
+                </tr>
+                <tr>
+                    <td><strong>Facility name</strong></td>
+                    <td>5</td>
+                    <td>Custodian name containing "recovery", "addiction", "methadone", etc.</td>
+                    <td>Minor corroboration &mdash; a hint, never decisive on its own</td>
+                </tr>
+                <tr>
+                    <td><strong>Total possible</strong></td>
+                    <td><strong>100</strong></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
 
         <div class="note">
-            <strong>Not every signal counts the same.</strong> Some medications (like methadone) are
-            only used in a narrow, tightly regulated treatment context and are a strong signal on their
-            own. Others (like buprenorphine) are also prescribed routinely in general practice, so they
-            carry less weight by themselves. We also only count activity tied to the visit itself —
-            a patient mentioning "I take methadone from my clinic" during an unrelated ER visit is not
-            evidence that the ER is a Part 2 program.
+            <strong>Source score is a weighted average.</strong> After scoring each CCD 0&ndash;100,
+            we roll the sample up to a single source score using a weighted average that gives more
+            influence to CCDs carrying strong, unambiguous signals (methadone, OTP codes). This keeps
+            a handful of clearly-Part-2 documents from being washed out by a larger volume of routine
+            records, while preventing a single outlier from dominating. The QE letter shows the
+            per-category point breakdown so the QE can see exactly which signals drove the flag.
+        </div>
+
+        <div class="note">
+            <strong>We only count activity delivered at the encounter itself.</strong> A patient
+            mentioning during an ER visit that they take methadone from a clinic elsewhere is
+            patient-reported history, not evidence that the ER is a treatment program — and we
+            exclude it. What moves a source onto the list is a sustained, population-level pattern of
+            the facility <em>actively providing</em> SUD treatment. We also look at the specific care
+            location within a source, since a hospital can contain a dedicated SUD unit even when the
+            hospital overall looks like ordinary care.
         </div>
     </section>
 
@@ -281,14 +345,20 @@
         <ol>
             <li>Pull a set of sample CCDs from sources that QEs have already submitted into PDR's
                 42 CFR-designated endpoint — these are our "known positives."</li>
-            <li>Run our scoring code against those samples and see whether it correctly identifies them
-                as having a high concentration of SUD treatment activity.</li>
-            <li>If the code doesn't reliably flag known Part 2 sources as candidates, that tells us
-                our indicators or thresholds need adjustment — we iterate until the code does a good
-                job of appropriately identifying sources that are known to be 42 CFR.</li>
-            <li>This phase is about building confidence: if the tool can't find what we already know
-                is there, it's not ready to find what we don't know about yet.</li>
+            <li>Run the same code against those samples and confirm the signals light up as expected.
+                This proves the clinical signature genuinely distinguishes treatment programs from
+                general care, rather than flagging noise.</li>
+            <li>If the code doesn't reliably flag known Part 2 sources, that tells us our indicators
+                or thresholds need adjustment — we iterate until it does a good job.</li>
         </ol>
+        <div class="note">
+            <strong>A grain of salt on the "known" set.</strong> This reference set is imperfect. Some
+            organizations are highly conservative and route entirely ordinary, non-SUD data to the
+            Part 2 endpoint out of an abundance of caution. So a source sitting in the Part 2 location
+            does not, by itself, prove its data carries a strong SUD signature. We treat the known set
+            as a useful guide, not as ground truth — looking for the clinical signature in the data
+            rather than assuming the routing was always correct.
+        </div>
 
         <h3>Phase 2 — Sanity Check on General Population</h3>
         <ol>
@@ -366,7 +436,9 @@
         <div class="note">
             The QE write-up is a request for research, not an accusation — it says what we observed,
             why it's a pattern worth asking about, and makes clear that only the QE's follow-up can
-            actually confirm Part 2 status.
+            actually confirm Part 2 status. The code that produced the analysis is in our Git
+            repository, and we are happy to share it with a QE's technical team so they can review
+            exactly how the signals are detected and scored.
             <br><br>
             <strong>Example:</strong> <a href="42cfr-sample-qe-letter.html">View a sample letter for Hudson Valley Wellness Associates</a>
         </div>
@@ -414,9 +486,10 @@
                         on whether it operates as, or contains, a Part 2 program.</td>
                 </tr>
                 <tr>
-                    <td>QE confirms it is a Part 2 program</td>
-                    <td>The QE and PDR coordinate on rerouting the data to the protected pipeline going
-                        forward.</td>
+                    <td>QE confirms it IS Part 2 but data was submitted as standard</td>
+                    <td>The QE engages their privacy and security team so the PDR and QE can build a
+                        specific remediation plan together — Part 2-protected data has been flowing
+                        through the standard pipeline.</td>
                 </tr>
                 <tr>
                     <td>QE researches and determines it is not a Part 2 program</td>

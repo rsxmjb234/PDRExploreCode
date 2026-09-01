@@ -75,8 +75,8 @@ def clean_dev_data():
     
     # Local folders to delete
     folders_to_delete = [
-        os.path.join(BASE_DIR, "DEV-Output", "generated_test_cases"),
-        os.path.join(BASE_DIR, "DEV-Output", "scored_results"),
+        os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), "generated_test_cases"),
+        os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), "scored_results"),
     ]
     
     for folder in folders_to_delete:
@@ -98,8 +98,8 @@ def clean_dev_data():
     
     # Local files to delete
     files_to_delete = [
-        os.path.join(BASE_DIR, "DEV-Output", "DEV-CodingQuality-Candidates.csv"),
-        os.path.join(BASE_DIR, "DEV-Output", "validation_report.json"),
+        os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), "DEV-CodingQuality-Candidates.csv"),
+        os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), "validation_report.json"),
     ]
     
     for filepath in files_to_delete:
@@ -158,7 +158,7 @@ def main():
     run_step(6, "Validate: scored vs expected (promotion gate)", "validate_test_cases.py")
     
     # Step 7: Generate HTML report
-    run_step(7, "Generate HTML quality report", "generate_report.py --output-dir DEV-Output")
+    run_step(7, "Generate HTML quality report", "generate_report.py --output-dir DEV")
     
     # Step 8: Validate tier assignments match expected profiles
     run_step(8, "Validate tier assignments (expected vs actual)", "validate_tier_assignments.py")
@@ -172,10 +172,10 @@ def main():
     print("  All steps passed. The scorer is validated and ready for PROD.")
     print()
     print("  DEV artifacts:")
-    print(f"    Candidates CSV:    {os.path.join(BASE_DIR, 'DEV-Output', CANDIDATES_CSV)}")
-    print(f"    Test CCDs:         {os.path.join(BASE_DIR, 'DEV-Output', 'generated_test_cases')}")
-    print(f"    Scored results:    {os.path.join(BASE_DIR, 'DEV-Output', 'scored_results')}")
-    print(f"    Validation report: {os.path.join(BASE_DIR, 'DEV-Output', 'validation_report.json')}")
+    print(f"    Candidates CSV:    {os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), CANDIDATES_CSV)}")
+    print(f"    Test CCDs:         {os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), 'generated_test_cases')}")
+    print(f"    Scored results:    {os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), 'scored_results')}")
+    print(f"    Validation report: {os.path.join(BASE_DIR, os.path.join("..", "06-Results", "Output", "DEV"), 'validation_report.json')}")
     print()
 
 

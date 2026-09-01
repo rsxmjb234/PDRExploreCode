@@ -20,7 +20,7 @@ correctly identifies the Yes sources and correctly ignores the No sources.
 
 | Landscape | How we know part2=Yes/No | Source of candidates CSV |
 |-----------|--------------------------|--------------------------|
-| DEV | Folder location in S3 — `42CFRStyleCCDs/` = Yes, `RawCCDs/` = No | Built fresh each run by `test_harness.py` listing S3 |
+| DEV | Folder location in S3 — `42CFRStyleCCDs/` = Yes, `42CFRTesting-Not42CFR/` = No | Built fresh each run by `test_harness.py` listing S3 and parsing assigningAuthorityName from each CCD |
 | PROD | Bucket name — `*-part2` suffix = Yes, regular bucket = No | Athena SQL (`findcandidates_42cfr.sql`) exported as CSV |
 
 
@@ -30,10 +30,13 @@ Two folders in `nyec.ccda.learning` simulate how PDR is set up:
 
 | Folder | part2 | What it represents |
 |--------|-------|-------------------|
-| `42CFRStyleCCDs/` | Yes | Known 42 CFR data (300 synthetic CCDs with SUD content) |
-| `RawCCDs/` | No | General population data (1,706 files, standard care) |
+| `42CFRStyleCCDs/` | Yes | Known 42 CFR data — CCDs with SUD treatment content |
+| `42CFRTesting-Not42CFR/` | No | Known non-Part-2 data — standard general care |
 
-DEV gives us 1 distinct AA for Yes pool, 2 for No pool.
+Each CCD contains an `assigningAuthorityName` field in the format `qe|assigning_authority`
+(e.g., `rochester|FLACRA` or `bronx|START TREATMENT AND RECOVERY CENTERS`).
+The candidate builder parses this from each CCD to populate the QE and AA columns.
+We evaluate at the Assigning Authority level — each distinct AA is a source.
 
 ## S3 Layout — PROD
 
@@ -54,8 +57,8 @@ Both DEV and PROD produce the same file:
 
 ```csv
 bucket,key,qe,assigning_authority,part2
-nyec.ccda.learning,42CFRStyleCCDs/Abe_Stracke....xml,dev-42cfr,42cfr-dev,Yes
-nyec.ccda.learning,RawCCDs/somefile.xml,dev-general,rawccd-dev,No
+nyec.ccda.learning,42CFRStyleCCDs/Abraham_Armstrong....xml,rochester,FLACRA,Yes
+nyec.ccda.learning,42CFRTesting-Not42CFR/Aaron_Gutkowski....xml,rochester,ACCCD,No
 ```
 
 In PROD (from Athena, values are quoted but Python handles that):
@@ -163,8 +166,8 @@ enough signals, and borderline cases exist. We allow:
 - Cost: an unnecessary phone call.
 - Action: inspect what triggered the flag, tighten that checker.
 
-The DEV tolerance for false positives is 0 because the RawCCDs are clean
-synthetic data with no SUD content — if we flag those, something is wrong.
+The DEV tolerance for false positives is 0 because the non-42-CFR sources
+are standard general care — if we flag those, something is wrong.
 
 
 ## Test Harness Output
@@ -221,7 +224,7 @@ Exit code 0 = pass, 1 = fail (usable in automation).
 | Non-Part-2 source scores as CANDIDATE | Checkers too loose | Look at what triggered the flag — was it a buprenorphine mention in a general practice? A false-matching keyword? Tighten the checker or adjust thresholds. |
 | Missing letters for flagged sources | Letter generation bug | Check generate_qe_letters.py — is it reading the aggregate CSV correctly? |
 | Letter generated for a non-42-CFR source | Scoring is correct but letter logic wrong | Trace: did aggregate classify it correctly but letter gen picked it up anyway? |
-| DEV RawCCDs all fail to parse | Those files are .csv not .xml | The DEV candidate builder now filters to .xml only — verify filter is working |
+| DEV non-42CFR files fail to parse | Not XML files in the folder | The DEV candidate builder filters to .xml only — verify filter is working |
 
 
 ## File Locations

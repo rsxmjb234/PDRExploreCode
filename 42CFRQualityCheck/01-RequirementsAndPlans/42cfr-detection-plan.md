@@ -109,7 +109,12 @@ For each CCD, count total clinical entries and how many are SUD-related.
 
 ### Specific Code Matches:
 
-**ICD-10 (Problems):**
+**SUD Diagnoses — match BOTH ICD-10 and SNOMED-CT (code systems vary by source):**
+
+Real CCDs and Synthea-generated CCDs frequently code the problem/diagnosis
+list in SNOMED-CT rather than ICD-10. The checker must recognize both.
+
+ICD-10 (codeSystem 2.16.840.1.113883.6.90):
 - F10.x = Alcohol-related disorders
 - F11.x = Opioid-related disorders
 - F12.x = Cannabis-related disorders
@@ -120,6 +125,47 @@ For each CCD, count total clinical entries and how many are SUD-related.
 - F17.x = Nicotine dependence (exclude — not Part 2)
 - F18.x = Inhalant-related disorders
 - F19.x = Other psychoactive substance disorders
+
+**Screening is NOT treatment.** Routine SUD screening (SBIRT, DAST-10,
+AUDIT-C, "screening for drug abuse", "assessment of substance use",
+"unhealthy alcohol drinking behavior") happens in ordinary primary care for
+nearly every patient. It is deliberately EXCLUDED from the signals — a
+facility that screens everyone is not a treatment program. We count actual
+SUD diagnoses (the reason for care) and treatment activity (rehab/detox
+encounters, MAT, addiction counseling as therapy), not screening.
+
+SNOMED-CT (codeSystem 2.16.840.1.113883.6.96) — SUD concepts, e.g.:
+- 5602001 = Opioid abuse
+- 191816009 = Drug dependence
+- 66214007 = Substance abuse
+- 7200002 / 15167005 = Alcohol dependence / abuse
+- 26416006 = Drug abuse; plus the broader SUD concept set
+- (nicotine/tobacco use SNOMED concepts are excluded, mirroring F17)
+
+Because SNOMED is a large ontology, the checker matches a curated set of
+SUD concept IDs AND falls back to a displayName keyword match (e.g.
+"opioid abuse", "alcohol dependence", "substance abuse", "drug dependence")
+so newly-seen SUD concepts still register. Tobacco/nicotine-only findings
+are excluded.
+
+**MAT Medications — NOT equal weight (by displayName keyword OR RxNorm code):**
+
+Synthea/real CCDs code medications by RxNorm number (codeSystem
+2.16.840.1.113883.6.88), often with the drug name only in displayName. The
+checker matches BOTH the RxNorm code set for MAT drugs and the displayName
+keywords.
+
+Methadone is only legally dispensed for OUD through a DEA-certified Opioid
+Treatment Program, so it is a much stronger Part 2 signal than the other
+MAT drugs, which are also used in ordinary office-based practice:
+
+- Strong signal (OTP-only): methadone (when dispensed/administered, not
+  just listed on a med rec list — see encounter-tied rules below)
+- Moderate signal (office-based, common outside Part 2): buprenorphine,
+  suboxone, subutex, sublocade, naltrexone, vivitrol
+- Weak/supportive signal only (not indicative alone): naloxone, narcan
+  (increasingly prescribed broadly as harm-reduction, not SUD-program-specific),
+  acamprosate, campral, disulfiram, antabuse
 
 **MAT Medications — NOT equal weight (by displayName keyword or RxNorm code):**
 
@@ -184,6 +230,14 @@ IMPORTANT: JSON must be Athena-friendly:
   "service_location_name": "Outpatient Addiction Services",
   "processing_time_ms": 250,
   "file_size_bytes": 350000,
+
+  "ccd_score": 75,
+  "score_diagnoses": 20,
+  "score_medications": 18,
+  "score_billing_codes": 22,
+  "score_encounters": 15,
+  "score_facility_name": 0,
+
   "sud_indicator_count": 5,
   "has_sud_content": true,
   "sud_diagnoses_count": 2,
@@ -199,6 +253,19 @@ IMPORTANT: JSON must be Athena-friendly:
   "top_sud_codes": "F11.20|buprenorphine|urine drug screen"
 }
 ```
+
+### Per-CCD Score Fields
+
+- `ccd_score` — the weighted 0-100 total for this CCD (sum of the five categories)
+- `score_diagnoses` — points earned in the SUD diagnoses category (0-25)
+- `score_medications` — points earned in the MAT medications category (0-20)
+- `score_billing_codes` — points earned in the OTP/SUD billing & procedure code category (0-25)
+- `score_encounters` — points earned in the treatment-model encounter category (0-25)
+- `score_facility_name` — points earned in the facility-name category (0-5)
+
+These per-category scores roll up to source-level averages (see Scoring Approach)
+and are what the QE letter displays as the "which signals flagged this facility"
+breakdown.
 
 ### Source Identity Fields
 
@@ -246,97 +313,112 @@ document was generated — important for time-series analysis.
 - No special characters in string values that would break CSV/JSON parsing
 
 
-## Scoring Approach
+## Scoring Approach — Weighted 0-100 Point Model
 
-### Per CCD: Absolute Count of SUD Indicators
+Rather than a simple binary "has SUD content" count, we score each CCD on a
+0-100 point scale by taking ALL the signal categories into account and giving
+each a weighted contribution. The weights reflect how strongly each category
+indicates a 42 CFR Part 2 treatment facility.
 
-For each CCD, count the total number of SUD indicators found (not a percentage).
-A CCD either "has SUD content" or it doesn't. Even 1 indicator counts.
+### The Five Signal Categories and Their Weights
 
-Output per CCD:
-- `sud_indicator_count` — total SUD signals found in this CCD (0, 1, 2, 5, etc.)
-- `has_sud_content` — boolean: is sud_indicator_count > 0?
-- Individual counts: `sud_diagnoses_count`, `mat_medications_count`, etc.
+| Category | Max Points | Rationale |
+|----------|-----------|-----------|
+| SUD diagnoses (ICD-10 F10-F19, excl. F17) | 25 | Core clinical indicator — the reason for care |
+| MAT medications | 20 | Strong when methadone is present; weaker for buprenorphine alone |
+| OTP / SUD-specific billing & procedure codes | 25 | Nearly exclusive to treatment programs |
+| Treatment-model encounter types | 25 | Detox/IOP/OTP visits describe a care model, not incidental care |
+| Facility name | 5 | Minor corroboration — a name hint, never decisive on its own |
+| **TOTAL** | **100** | |
 
-Example:
-- Patient on methadone + has F11.20 diagnosis + 3 urine drug screens = 5 indicators
-- Patient with only a smoking history (F17.x) and no other SUD = 0 indicators (F17 excluded)
+### How Each Category Earns Its Points (Per CCD)
+
+Each category scores from 0 up to its cap based on the strength and quantity
+of what is found. This is a "up to N points" model — presence and intensity
+both matter, but no category can exceed its cap.
+
+- **SUD diagnoses (up to 25):** points scale with the number of distinct
+  F10-F19 encounter diagnoses. A single SUD diagnosis earns partial credit; a
+  CCD dominated by SUD diagnoses approaches the cap. Problem-list-only
+  (historical) diagnoses earn reduced credit since they are a weaker signal.
+- **MAT medications (up to 20):** methadone (OTP-only) earns near-full credit
+  on its own; buprenorphine/naltrexone earn moderate credit; naloxone and
+  other supportive agents earn low credit. Multiple MAT meds add up to the cap.
+- **OTP / SUD billing & procedure codes (up to 25):** an OTP-specific code
+  (H0020, S0109, G2067-G2078) earns near-full credit; SUD counseling and
+  screening codes earn moderate credit; a bare drug-test code earns low credit.
+- **Treatment-model encounters (up to 25):** a coded detox/IOP/OTP/residential
+  encounter earns high credit; keyword-only matches earn moderate credit.
+- **Facility name (up to 5):** the custodian name matching SUD keywords
+  (recovery, addiction, methadone, etc.) earns the small facility-name credit.
+
+The CCD's total score is the sum, capped at 100.
+
+### Source-Level Score: Weighted Average Across the Sample
+
+For each source (Assigning Authority), we take the CCDs sampled for that
+source and compute a **weighted average** of their per-CCD scores to produce a
+single source score (0-100). The weighting gives more influence to CCDs that
+carry strong, unambiguous signals (methadone, OTP codes) so that a handful of
+clearly-Part-2 documents are not washed out by a larger volume of routine
+records — while still preventing a single outlier from dominating.
+
+```
+For each CCD i in the source's sample:
+    ccd_score_i    = weighted sum of the five categories (0-100)
+    ccd_weight_i   = 1 + bonus if the CCD contains a strong signal
+                     (methadone dispensed OR an OTP billing code)
+
+source_score = sum(ccd_score_i * ccd_weight_i) / sum(ccd_weight_i)
+```
+
+We also retain the simpler supporting metrics (SUD prevalence, strong-signal
+prevalence, average indicator count) for context in the letter, but the
+**source score is the headline number** used for classification.
 
 ### Two Levels of Aggregation: Source AND Service Location
 
-A source-only rollup will miss the priority case: a Part 2 "identified unit"
-operating inside an otherwise-general facility. If a hospital contributes
-1,000 CCDs and 150 come from its addiction medicine unit, the source-level
-prevalence is only 15% (looks CLEAR) even though that unit is ~100% Part 2
-activity. So we aggregate at BOTH levels and flag on whichever is higher:
+We compute the source score at BOTH levels and flag on whichever is higher:
 
-```
-# Level 1: whole source (AA)
-ccds_with_sud = COUNT of CCDs where has_sud_content = true
-ccds_sampled = total CCDs scored for this source
-sud_prevalence_source = ccds_with_sud / ccds_sampled
+- **Level 1 — whole source (AA):** weighted-average score across all the
+  source's sampled CCDs.
+- **Level 2 — service location within the source:** the same weighted-average
+  score computed only over CCDs from a specific `service_location_name`.
 
-# Level 2: service_location_name within that source
-# (group by assigning_authority + service_location_name)
-ccds_with_sud_at_location = COUNT where has_sud_content = true, same location
-ccds_sampled_at_location = total CCDs scored for that location
-sud_prevalence_location = ccds_with_sud_at_location / ccds_sampled_at_location
-```
+This catches a Part 2 "identified unit" operating inside an otherwise-general
+facility: the parent AA might score low, but the unit scores high. Report both,
+and keep the location detail in the letter so the QE can see where the signal
+concentrates.
 
-Report both. A source with low overall prevalence but one location at 80%+
-is arguably the highest-priority finding — it's an identified unit quietly
-contributing Part 2 data under the umbrella of a "standard" facility AA.
+### Flagging Logic — Score-Based, With Deference to Inclusion
 
-### Flagging Logic — Deference to Inclusion
+Because this is candidate identification (not a determination), we err on the
+side of INCLUSION. A false positive costs the QE one phone call; a false
+negative leaves a compliance gap undetected.
 
-Because this is candidate identification (not a determination), we err on
-the side of INCLUSION. The bar for "put it on the list for QE research" is
-deliberately low. A false positive costs the QE one phone call. A false
-negative leaves a possible compliance gap undetected and un-investigated.
+| Source Score (0-100) | Classification | Action |
+|----------------------|---------------|--------|
+| >= 60 | CANDIDATE - HIGH | Letter to QE, high confidence research warranted |
+| 35-59 | CANDIDATE - MODERATE | Letter to QE, elevated signal warrants a conversation |
+| 15-34 | CANDIDATE - LOW | Letter to QE, signal above general-population baseline |
+| < 15 | NOT A CANDIDATE | No letter — consistent with general population |
 
-Apply the same thresholds at both the source level and the location level;
-take the higher of the two as the source's overall classification, but keep
-the location-level detail in the letter so the QE can see WHERE within
-the source the signal is concentrated.
+Additionally, ANY source with a strong signal present (methadone dispensing or
+an OTP billing code in even a single CCD) becomes at minimum CANDIDATE - LOW,
+regardless of the weighted score. Those signals are strong enough that even one
+occurrence warrants a question to the QE.
 
-| sud_prevalence | Classification | Action |
-|----------------|---------------|--------|
-| > 50% of CCDs have SUD content | CANDIDATE - HIGH | Letter to QE, high confidence research warranted |
-| 25-50% | CANDIDATE - MODERATE | Letter to QE, elevated signal warrants a conversation |
-| 10-25% | CANDIDATE - LOW | Letter to QE, noting signal is above general-population baseline |
-| < 10% | NOT A CANDIDATE | No letter — consistent with general population background rate |
+Note: score thresholds and category weights are a starting point, not fixed.
+Refine them using the validation approach below (known 42 CFR sources) before
+running against the general population.
 
-Additionally, ANY source or location where `strong_signal_prevalence > 0`
-(even a single CCD with methadone dispensing or an OTP billing code hit)
-becomes at minimum a CANDIDATE - LOW regardless of overall sud_prevalence.
-These specific signals are strong enough that even one occurrence warrants
-a question to the QE.
+### The Letter Shows Which Signals Flagged the Facility
 
-The insight: a general hospital might have 5-15% of CCDs with any SUD indicator
-(because some patients have substance use issues). A dedicated treatment facility,
-or an identified unit within a larger facility, will have 50-80%+ because that's
-close to its entire patient population.
-
-Note: thresholds are a starting point, not fixed. Refine them using the
-validation approach below (known 42 CFR sources) before running against the
-general population.
-
-### Signal Strength Matters, Not Just Count
-
-Because methadone dispensing and OTP billing codes are much stronger Part 2
-signals than buprenorphine or naloxone, prevalence alone can both overstate
-and understate risk. A CCD's `sud_indicator_count` should be supplemented by
-whether it contains a *strong* signal (methadone dispensed, or an OTP billing
-code hit) versus only *moderate/weak* signals (buprenorphine alone, naloxone
-alone). At the source/location level, also compute:
-
-```
-strong_signal_prevalence = CCDs with methadone_dispensed OR sud_billing_code_hit / ccds_sampled
-```
-
-A location with low overall SUD prevalence but a nonzero `strong_signal_prevalence`
-still deserves review — it suggests OTP-billed activity is present even if
-diluted by a larger general population.
+Because the score is built from five weighted categories, the QE letter must
+show the **per-category score breakdown** for the flagged source: how many of
+the possible points each category earned, so the QE can see exactly which
+signals drove the flag (e.g., "OTP billing codes: 22/25, MAT medications: 18/20,
+SUD diagnoses: 20/25, encounters: 15/25, facility name: 0/5 — total 75/100").
 
 ### Facility Name Logic (Inverted Priority)
 
