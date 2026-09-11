@@ -85,11 +85,12 @@ NORMALIZE_STRIP_LEADING_ZEROS_ON_MRN = False  # set True if MRNs differ only by 
 # LEDGER / OUTPUT FILE NAMES (inside output_dir)
 # ============================================================================
 
-LEDGER_FILENAME = "processed_files.log"     # append-only list of finished S3 keys
-MATCHES_FILENAME = "matches_detail.csv"     # Output B: one row per (file, matched pair)
+LEDGER_FILENAME = "processed_files.log"       # append-only list of finished S3 keys
+MATCHES_FILENAME = "matches_detail.csv"       # Output B: one row per (file, matched pair)
 COVERAGE_FILENAME = "candidate_coverage.csv"  # Output A: one row per known AA|MRN pair
-ERRORS_FILENAME = "errors.log"              # files that failed download/parse
-SUMMARY_FILENAME = "run_summary.txt"        # end-of-run tallies
+TRACKING_FILENAME = "adt_tracking.csv"        # Output D: one row per PID-3 found (v1 schema)
+ERRORS_FILENAME = "errors.log"                # files that failed download/parse
+SUMMARY_FILENAME = "run_summary.txt"          # end-of-run tallies
 
 # ============================================================================
 # FLUSH INTERVAL — write + flush to disk at least every N processed files
@@ -107,7 +108,6 @@ FLUSH_EVERY = 50
 # Applied at LISTING time using the S3 object's LastModified timestamp, BEFORE
 # a file is ever queued for download. Excluded files cost nothing (no GET, no
 # parse) and are tallied separately as "skipped_before_cutoff" in the summary.
-import datetime
 MIN_FILE_DATE = datetime.date(2026, 1, 1)
 
 # ============================================================================

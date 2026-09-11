@@ -16,13 +16,18 @@ Implements every requirement in:
         durably written
       * never process the same file twice
       * flush to disk at least every FLUSH_EVERY (50) processed files
-      * three outputs: candidate coverage (A), match detail (B), summary (C)
+      * four outputs: candidate coverage (A), match detail (B), summary (C),
+        ADT tracking records (D)
   - 01-RequirementsAndPlans/parallelism-requirement.md
       * configurable WORKERS (default 1 = sequential, unchanged behavior)
       * single producer hands each S3 key to a worker exactly once (no two
         workers can ever grab the same file)
       * all output writes serialized through a single lock
       * thread-safe per-candidate tallies
+  - 01-RequirementsAndPlans/adt-tracking-database-requirement.md
+      * one tracking row per PID-3 identifier found, in EVERY successfully
+        parsed file (match or not) — v1 schema: date/time, assigning
+        authority, MRN (final schema pending)
 
 Usage:
     python scan_bucket.py
@@ -42,6 +47,7 @@ from config import (
     LEDGER_FILENAME,
     MATCHES_FILENAME,
     COVERAGE_FILENAME,
+    TRACKING_FILENAME,
     ERRORS_FILENAME,
     SUMMARY_FILENAME,
     FLUSH_EVERY,
@@ -50,6 +56,7 @@ from config import (
 )
 from load_lookup import load_lookup, make_key
 import parse_adt
+import capture_adt_record
 
 
 # ============================================================================
@@ -80,6 +87,7 @@ class ScanState:
         self.files_skipped_cutoff = 0   # excluded by MIN_FILE_DATE
         self.files_errored = 0
         self.match_rows_written = 0
+        self.tracking_rows_written = 0
 
         self._since_flush = 0
 
@@ -87,6 +95,7 @@ class ScanState:
         # files rather than clobbering prior progress.
         self._ledger_f = open(paths["ledger"], "a", encoding="utf-8", newline="")
         self._matches_f = open(paths["matches"], "a", encoding="utf-8", newline="")
+        self._tracking_f = open(paths["tracking"], "a", encoding="utf-8", newline="")
         self._errors_f = open(paths["errors"], "a", encoding="utf-8", newline="")
 
         self._matches_writer = csv.writer(self._matches_f)
@@ -97,16 +106,29 @@ class ScanState:
             ])
             self._matches_f.flush()
 
+        # Output D: ADT tracking records (see adt-tracking-database-requirement.md).
+        # v1 schema: date/time, assigning authority, MRN. One row per PID-3
+        # identifier found, in every successfully parsed file.
+        self._tracking_writer = csv.writer(self._tracking_f)
+        if self._tracking_f.tell() == 0:
+            self._tracking_writer.writerow([
+                "adt_date_time", "assigning_authority", "mrn",
+            ])
+            self._tracking_f.flush()
+
     # ------------------------------------------------------------------
     # Called by a worker after it has fully processed one file. This is
     # the ONLY place that writes matches, updates coverage, and appends to
     # the ledger — so it must run under the lock.
     # ------------------------------------------------------------------
-    def record_result(self, s3_key, bucket, path, matches):
+    def record_result(self, s3_key, bucket, path, matches, tracking_records):
         """
         matches: list of dicts with aa, mrn, message_type, message_time, raw_pid3
-        (empty list if the file had no hits). Called once per successfully
-        processed file (download + parse succeeded).
+        (empty list if the file had no hits).
+        tracking_records: list of dicts from capture_adt_record.build_records()
+        — one per PID-3 identifier found in the file, regardless of match
+        (empty list only if the file had zero PID-3 identifiers at all).
+        Called once per successfully processed file (download + parse succeeded).
         """
         with self.lock:
             # 1) Write match detail rows (Output B) and update coverage (Output A)
@@ -126,15 +148,23 @@ class ScanState:
                         cov["first_type"] = m["message_type"]
                         cov["first_time"] = m["message_time"]
 
-            # 2) Mark the file done in the ledger — ONLY after the result
-            #    above has been written. If the process dies before this
+            # 2) Write ADT tracking rows (Output D) — one per PID-3 found,
+            #    match or not. Same file, same pass, no extra download/parse.
+            for rec in tracking_records:
+                self._tracking_writer.writerow([
+                    rec["adt_date_time"], rec["assigning_authority"], rec["mrn"],
+                ])
+                self.tracking_rows_written += 1
+
+            # 3) Mark the file done in the ledger — ONLY after the results
+            #    above have been written. If the process dies before this
             #    line, the file is simply retried next run.
             self._ledger_f.write(s3_key + "\n")
 
             self.files_processed += 1
             self._since_flush += 1
 
-            # 3) Flush at least every FLUSH_EVERY processed files (hard
+            # 4) Flush at least every FLUSH_EVERY processed files (hard
             #    requirement — never lose more than this to a crash).
             if self._since_flush >= FLUSH_EVERY:
                 self._flush_all()
@@ -153,7 +183,7 @@ class ScanState:
 
     def _flush_all(self):
         """Actual write + flush + fsync to disk. Called only while holding lock."""
-        for f in (self._ledger_f, self._matches_f, self._errors_f):
+        for f in (self._ledger_f, self._matches_f, self._tracking_f, self._errors_f):
             f.flush()
             try:
                 os.fsync(f.fileno())
@@ -168,6 +198,7 @@ class ScanState:
         self.final_flush()
         self._ledger_f.close()
         self._matches_f.close()
+        self._tracking_f.close()
         self._errors_f.close()
 
 
@@ -235,7 +266,12 @@ def process_one_file(s3_client, bucket, key, state):
                     "raw_pid3": ident["raw_pid3"],
                 })
 
-    state.record_result(key, bucket, path, matches)
+    # Output D: one tracking record per PID-3 found, match or not — see
+    # adt-tracking-database-requirement.md. Cheap: we already have `messages`
+    # in memory from the parse above, no extra download/parse needed.
+    tracking_records = capture_adt_record.build_records(messages)
+
+    state.record_result(key, bucket, path, matches, tracking_records)
 
 
 # ============================================================================
@@ -288,6 +324,7 @@ def main():
         "ledger": os.path.join(output_dir, LEDGER_FILENAME),
         "matches": os.path.join(output_dir, MATCHES_FILENAME),
         "coverage": os.path.join(output_dir, COVERAGE_FILENAME),
+        "tracking": os.path.join(output_dir, TRACKING_FILENAME),
         "errors": os.path.join(output_dir, ERRORS_FILENAME),
         "summary": os.path.join(output_dir, SUMMARY_FILENAME),
     }
@@ -343,20 +380,28 @@ def main():
             # is the ONLY place that decides which key goes to which future,
             # so no two workers can ever receive the same key.
             clients = [session.client("s3") for _ in range(WORKERS)]
+            producer_client = session.client("s3")  # separate client for listing only
 
             with ThreadPoolExecutor(max_workers=WORKERS) as pool:
                 futures = {}
                 key_gen = iter_candidate_keys(
-                    session.client("s3"), cfg["bucket"], cfg.get("prefix", ""),
+                    producer_client, cfg["bucket"], cfg.get("prefix", ""),
                     ledger_done, state,
                 )
+
+                # Simple monotonically-increasing counter for round-robin
+                # client assignment. NOTE: len(futures) is NOT safe to use
+                # here — it shrinks as futures complete, so it does not give
+                # a stable round-robin sequence. A dedicated counter does.
+                dispatch_counter = [0]
 
                 def submit_next():
                     try:
                         key = next(key_gen)
                     except StopIteration:
                         return False
-                    client = clients[len(futures) % WORKERS]
+                    client = clients[dispatch_counter[0] % WORKERS]
+                    dispatch_counter[0] += 1
                     fut = pool.submit(process_one_file, client, cfg["bucket"], key, state)
                     futures[fut] = key
                     return True
@@ -396,6 +441,7 @@ def main():
     print("\nDone. See:")
     print(f"  Coverage (primary): {paths['coverage']}")
     print(f"  Match detail:       {paths['matches']}")
+    print(f"  ADT tracking:       {paths['tracking']}")
     print(f"  Run summary:        {paths['summary']}")
 
 
@@ -439,6 +485,7 @@ def _write_summary(summary_path, state, lookup_stats, elapsed_sec):
         f"Files skipped (before cutoff):  {state.files_skipped_cutoff:,}",
         f"Files errored (will retry):     {state.files_errored:,}",
         f"Match detail rows written:      {state.match_rows_written:,}",
+        f"ADT tracking rows written:      {state.tracking_rows_written:,}",
         "",
         f"Elapsed this run:                {elapsed_sec/60:.1f} min",
     ]

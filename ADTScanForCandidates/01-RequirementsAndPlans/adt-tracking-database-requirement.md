@@ -28,22 +28,27 @@ AA|MRN pair), write one tracking record capturing what we found in that file.
   match detail (Output B) from the main requirements — call it **Output D:
   ADT tracking records**.
 
-### What we capture (pending final schema)
+### What we capture (interim schema — v1)
 
-**The exact column list / schema will be provided separately (schema TBD —
-to follow).** Until that's in hand, capture at least the fields we already
-have on hand from parsing, so the pipe is proven end-to-end and only the
-column set needs to change once the schema arrives:
+**Final schema to follow.** Until we have it, capture the minimum useful
+fields so the pipe is proven end-to-end: **date/time, Assigning Authority,
+MRN.** This does not need to be perfect — it's something, versus nothing,
+and it slots into a real schema later with minimal rework.
 
-- `s3_key`, `bucket`, `path` — where the file came from
-- `message_type` (MSH-9), `message_time` (MSH-7)
-- `sending_application` / `sending_facility` (MSH-3 / MSH-4) if present
-- `patient_identifiers` — every PID-3 found in the file (id + assigning
-  authority), flattened to a pipe-delimited string since we don't yet know
-  the target schema's shape
-- `matched_known_candidate` — yes/no (did this file match one of our 35k
-  AA|MRN pairs — cheap to include since we already compute it)
-- `file_last_modified` — the S3 object's LastModified date, for reference
+One tracking row per **patient identifier (PID-3) found**, in every
+successfully parsed ADT file — not just files that matched a known candidate:
+
+- `adt_date_time` — the message timestamp (MSH-7) from the ADT that carried
+  this identifier
+- `assigning_authority` — from PID-3 component 4 (normalized the same way as
+  the rest of the scan)
+- `mrn` — from PID-3 component 1 (normalized the same way as the rest of the
+  scan)
+
+A file with multiple PID-3 identifiers (or multiple messages in one file)
+produces multiple tracking rows. No S3 path, message type, or match flag is
+captured in v1 — those can be added once the real schema defines whether/how
+they're needed.
 
 ### Design note: keep this decoupled from the final schema
 
@@ -62,6 +67,9 @@ covers *capturing* the data during the scan.
 
 ## Open Item
 
-**Schema pending** — user will provide the target tracking-database schema.
-Once received, update this document with the final column list and adjust
-`capture_adt_record.py` accordingly.
+**Final schema pending** — user will provide the target tracking-database
+schema. The v1 fields above (date/time, assigning authority, MRN) are a
+placeholder we can start capturing immediately. Once the real schema
+arrives, update this document with the final column list and adjust
+`capture_adt_record.py`'s output mapping — the scan/restart/parallelism logic
+does not change.
