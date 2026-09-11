@@ -25,9 +25,10 @@ Implements every requirement in:
       * all output writes serialized through a single lock
       * thread-safe per-candidate tallies
   - 01-RequirementsAndPlans/adt-tracking-database-requirement.md
-      * one tracking row per PID-3 identifier found, in EVERY successfully
-        parsed file (match or not) — v1 schema: date/time, assigning
-        authority, MRN (final schema pending)
+      * one tracking row per ADT message, in EVERY successfully parsed file
+        (match or not) — columns mirror NYEC_EG_Operational_Database_Schema.csv
+        (lookup/crosswalk-dependent columns omitted) plus an appended
+        found_in_missing_mrn_list yes/no column
 
 Usage:
     python scan_bucket.py
@@ -107,13 +108,12 @@ class ScanState:
             self._matches_f.flush()
 
         # Output D: ADT tracking records (see adt-tracking-database-requirement.md).
-        # v1 schema: date/time, assigning authority, MRN. One row per PID-3
-        # identifier found, in every successfully parsed file.
+        # Mirrors NYEC_EG_Operational_Database_Schema.csv column order, plus
+        # one appended found_in_missing_mrn_list column. One row per ADT
+        # message (encounter-level), in every successfully parsed file.
         self._tracking_writer = csv.writer(self._tracking_f)
         if self._tracking_f.tell() == 0:
-            self._tracking_writer.writerow([
-                "adt_date_time", "assigning_authority", "mrn",
-            ])
+            self._tracking_writer.writerow(capture_adt_record.TRACKING_COLUMNS)
             self._tracking_f.flush()
 
     # ------------------------------------------------------------------
@@ -148,12 +148,12 @@ class ScanState:
                         cov["first_type"] = m["message_type"]
                         cov["first_time"] = m["message_time"]
 
-            # 2) Write ADT tracking rows (Output D) — one per PID-3 found,
+            # 2) Write ADT tracking rows (Output D) — one per ADT message,
             #    match or not. Same file, same pass, no extra download/parse.
             for rec in tracking_records:
-                self._tracking_writer.writerow([
-                    rec["adt_date_time"], rec["assigning_authority"], rec["mrn"],
-                ])
+                self._tracking_writer.writerow(
+                    [rec[col] for col in capture_adt_record.TRACKING_COLUMNS]
+                )
                 self.tracking_rows_written += 1
 
             # 3) Mark the file done in the ledger — ONLY after the results
@@ -266,10 +266,10 @@ def process_one_file(s3_client, bucket, key, state):
                     "raw_pid3": ident["raw_pid3"],
                 })
 
-    # Output D: one tracking record per PID-3 found, match or not — see
+    # Output D: one tracking record per ADT message, match or not — see
     # adt-tracking-database-requirement.md. Cheap: we already have `messages`
     # in memory from the parse above, no extra download/parse needed.
-    tracking_records = capture_adt_record.build_records(messages)
+    tracking_records = capture_adt_record.build_records(messages, lookup_set=state.lookup_set)
 
     state.record_result(key, bucket, path, matches, tracking_records)
 
