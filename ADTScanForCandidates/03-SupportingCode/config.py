@@ -10,6 +10,7 @@ encounter-gateway-incoming-prod bucket).
 """
 
 import os
+import datetime
 
 # ============================================================================
 # CHOOSE YOUR PROFILE -- set to "DEV" or "PROD"
@@ -84,13 +85,37 @@ NORMALIZE_STRIP_LEADING_ZEROS_ON_MRN = False  # set True if MRNs differ only by 
 # LEDGER / OUTPUT FILE NAMES (inside output_dir)
 # ============================================================================
 
-LEDGER_FILENAME = "processed_files.log"   # append-only list of finished S3 keys
-MATCHES_FILENAME = "matches.csv"          # one row per (file, matched pair)
-ERRORS_FILENAME = "errors.log"            # files that failed download/parse
-SUMMARY_FILENAME = "run_summary.txt"      # end-of-run tallies
+LEDGER_FILENAME = "processed_files.log"     # append-only list of finished S3 keys
+MATCHES_FILENAME = "matches_detail.csv"     # Output B: one row per (file, matched pair)
+COVERAGE_FILENAME = "candidate_coverage.csv"  # Output A: one row per known AA|MRN pair
+ERRORS_FILENAME = "errors.log"              # files that failed download/parse
+SUMMARY_FILENAME = "run_summary.txt"        # end-of-run tallies
 
 # ============================================================================
-# FLUSH INTERVAL — write progress to disk every N files processed
+# FLUSH INTERVAL — write + flush to disk at least every N processed files
 # ============================================================================
+# HARD REQUIREMENT (see adt-scan-requirements.md "Flush to disk every 50
+# records"): we previously lost hours of work to a crash because output
+# wasn't reliably hitting disk. 50 is the MAXIMUM acceptable gap between a
+# file being processed and its result being safely flushed to disk. Writing
+# more often (even every file) is fine; less often than this is not.
+FLUSH_EVERY = 50
 
-FLUSH_EVERY = 200
+# ============================================================================
+# DATE CUTOFF — exclude files older than this (good data starts 1/1/2026)
+# ============================================================================
+# Applied at LISTING time using the S3 object's LastModified timestamp, BEFORE
+# a file is ever queued for download. Excluded files cost nothing (no GET, no
+# parse) and are tallied separately as "skipped_before_cutoff" in the summary.
+import datetime
+MIN_FILE_DATE = datetime.date(2026, 1, 1)
+
+# ============================================================================
+# PARALLELISM  (see 01-RequirementsAndPlans/parallelism-requirement.md)
+# ============================================================================
+# Number of worker threads that download + parse + match files concurrently.
+#   WORKERS = 1  -> pure sequential (default; behavior unchanged)
+#   WORKERS = 8..16 -> good for a laptop run over the full bucket
+# A single producer hands each S3 key to a worker exactly once, so two workers
+# can never process the same file. All output writes are serialized by a lock.
+WORKERS = 1
