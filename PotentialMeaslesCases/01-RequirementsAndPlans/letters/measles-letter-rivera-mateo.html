@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potential Measles Case: Rivera, Mateo (Fictitious)</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8f6f2; margin: 0; color: #2f2218; }
+        header { background: linear-gradient(130deg, #3d2b1f 0%, #6a4524 100%); color: #fff; padding: 0.9rem 1.2rem; }
+        header h1 { margin: 0; color: #f7d27d; font-size: 1.25em; }
+        header p { margin: 0.2rem 0 0; color: #e6cfaa; font-size: 0.9em; }
+        .wrap { max-width: 880px; margin: 1rem auto 2rem; padding: 0 1.2rem; }
+        .fictitious { background: #eef2ff; border-left: 4px solid #6366f1; border-radius: 0.4rem; padding: 0.5rem 0.75rem; font-size: 0.84em; line-height: 1.5; margin-bottom: 0.9rem; }
+        .back-link { display:inline-block; margin:0.6rem 0 0; color:#6f4b0f; font-size:0.84em; font-weight:700; text-decoration:none; }
+        .panel { background: #fffdf8; border-radius: 0.8rem; box-shadow: 0 4px 14px rgba(61,43,31,0.08); border-top: 4px solid #c8a84b; padding: 1.1rem 1.2rem; margin-bottom: 0.9rem; }
+        .panel h2 { margin: 0 0 0.4rem; font-size: 1.05em; color: #3d2b1f; }
+        .panel h3 { margin: 0.7rem 0 0.3rem; font-size: 0.92em; color: #5c3a1e; }
+        .panel p, .panel li { color: #4b3a2c; line-height: 1.65; font-size: 0.9em; }
+        .panel ul, .panel ol { margin: 0.3rem 0 0.5rem 1.1rem; padding: 0; }
+        .panel li { margin-bottom: 0.25em; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.84em; margin-top: 0.4rem; }
+        th, td { border: 1px solid #e6d9c4; padding: 0.4em 0.55em; text-align: left; }
+        th { background: #f9f1e2; font-weight: 700; color: #3d2b1f; font-size: 0.82em; text-transform: uppercase; }
+        .highlight { background: #fef2f2; }
+        .idblock { background: #f9f1e2; border: 1px solid #e6d9c4; border-radius: 0.5rem; padding: 0.6rem 0.8rem; font-size: 0.9em; }
+        .idblock td { border: none; padding: 0.18em 0.5em 0.18em 0; }
+        .idblock td.k { font-weight: 700; color: #5c3a1e; width: 150px; }
+        .mono { font-family: Consolas, 'Courier New', monospace; background:#fff; border:1px solid #e6d9c4; border-radius:0.3em; padding:0.05em 0.4em; }
+        .red { color: #dc2626; font-weight: 700; }
+        .note { margin-top: 0.5rem; background: #fef3d0; border-left: 4px solid #c8a84b; border-radius: 0.4rem; padding: 0.5rem 0.7rem; font-size: 0.84em; line-height: 1.55; }
+        .warn { margin-top: 0.5rem; background: #fef2f2; border-left: 4px solid #dc2626; border-radius: 0.4rem; padding: 0.5rem 0.7rem; font-size: 0.84em; line-height: 1.55; }
+        .footer { text-align: center; color: #b09060; margin: 1.5rem 0 1rem; font-size: 0.82em; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Potential Measles Case &mdash; Public-Health Follow-Up</h1>
+    <p>Mateo Rivera &nbsp;&bull;&nbsp; Concern level: HIGH</p>
+</header>
+
+<div class="wrap">
+
+    <a class="back-link" href="../measles-candidate-dashboard.html">&#8592; Back to Candidate Dashboard</a>
+
+    <div class="fictitious">
+        <strong>Fictitious example.</strong> This person and all data below are invented for demonstration.
+        This is a candidate for review, <strong>not a diagnosis</strong> — only clinicians and public health can
+        confirm whether this is measles.
+    </div>
+
+    <section class="panel">
+        <h2>Patient Identity (for lookup)</h2>
+        <table class="idblock">
+            <tr><td class="k">First name</td><td>Mateo</td></tr>
+            <tr><td class="k">Last name</td><td>Rivera</td></tr>
+            <tr><td class="k">Date of birth</td><td>03/14/2021 (age 5)</td></tr>
+            <tr><td class="k">Address</td><td>42 Maplewood Ave, Rochester, NY 14620</td></tr>
+            <tr><td class="k">SOURCE | MRN</td><td><span class="mono">NORTHGATE-PEDS | 00481937</span></td></tr>
+            <tr><td class="k">Qualified Entity</td><td>rochester</td></tr>
+        </table>
+        <div class="note">Use the <strong>SOURCE | MRN</strong> above to pull the full record at the source for review.</div>
+    </section>
+
+    <section class="panel">
+        <h2>Why We Are Flagging This Person</h2>
+        <p>This patient's data carries multiple signals consistent with possible measles, and
+           <strong>we found no matching reportable-condition report</strong> for measles on file. In other
+           words, if this turns out to be measles, it has not yet been reported through the mandated channel.</p>
+        <p>Classic measles presents as fever plus the "three C's" (cough, coryza, conjunctivitis) followed by a
+           maculopapular rash. This patient's record shows several of those features landing together, plus a
+           measles-specific lab order &mdash; which is what moved this case to HIGH concern.</p>
+    </section>
+
+    <section class="panel">
+        <h2>What We Found and Where</h2>
+        <table>
+            <thead><tr><th>Signal</th><th>Data Type</th><th>Where</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr class="highlight"><td>Measles IgM serology ordered</td><td>Lab (ORU)</td><td>Result message</td><td>Measles IgM antibody ordered 2026-09-06; result pending at time of scan</td></tr>
+                <tr><td>Fever + rash presentation</td><td>ADT</td><td>ED visit reason</td><td>Pediatric ED visit 2026-09-06 for "fever and rash"</td></tr>
+                <tr><td>"Rule out measles" in note</td><td>TRN</td><td>Visit summary narrative</td><td>Provider note mentions "r/o measles, maculopapular rash, coryza"</td></tr>
+                <tr><td>Maculopapular rash finding</td><td>CCD</td><td>Problem / observation</td><td>Rash observation coded alongside fever in the same encounter</td></tr>
+            </tbody>
+        </table>
+        <div class="note">All four signals come from the <strong>same recent encounter window</strong> and
+           reinforce each other &mdash; a lab order specific to measles is the strongest of the group.</div>
+    </section>
+
+    <section class="panel">
+        <h2>Methodology Used</h2>
+        <p>The same approach described on the <a href="../measles-candidate-detection.html">measles explore page</a>
+           produced this candidate:</p>
+        <ol>
+            <li><strong>Scanned four data types</strong> &mdash; TRN, ADT, CCD, and lab (ORU) &mdash; for
+                potential-measles signals: measles IgM/PCR lab orders, measles/exanthem diagnosis codes
+                (ICD-10 <span class="mono">B05.x</span>, SNOMED measles findings), and fever-plus-rash encounter
+                patterns with coryza/conjunctivitis.</li>
+            <li><strong>Combined signals per patient.</strong> Independent signals that line up in the same
+                encounter window raise concern; a measles-specific lab order weighs most heavily.</li>
+            <li><strong>Excluded already-reported cases.</strong> We removed any patient tied to a submitted
+                measles reportable-condition report. This patient had <strong>no matching report</strong>, so the
+                hint is unreported &mdash; exactly the case we care about.</li>
+        </ol>
+        <div class="warn"><strong>This is a candidate, not a determination.</strong> We are not saying this
+           patient has measles. We are saying the data pattern warrants public-health review, and no report exists yet.</div>
+    </section>
+
+    <section class="panel">
+        <h2>Suggested Next Step</h2>
+        <p>Review the full record at the source using the <strong>SOURCE | MRN</strong> above, confirm the clinical
+           picture and any pending lab result, and determine whether a reportable-condition report is warranted. If
+           it is measles, please initiate the mandated report.</p>
+    </section>
+
+</div>
+
+<div class="footer">
+    Generated by PDR Measles Candidate Detection Tool (demo)<br>
+    Report date: 2026-09-11 &middot; Fictitious data<br>
+    Contact: PDR Data Quality Team
+</div>
+
+</body>
+</html>

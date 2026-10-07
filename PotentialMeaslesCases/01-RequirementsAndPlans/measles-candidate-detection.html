@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explore — Unreported Potential Measles Cases</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(145deg, #eef3f8 0%, #e4edf6 55%, #d9e8f4 100%);
+            margin: 0;
+            color: #1a2b3c;
+        }
+        header {
+            background: linear-gradient(135deg, #0b2e4f 0%, #103f6e 55%, #0e4f82 100%);
+            color: #fff;
+            padding: 2.2rem 1.2rem 1.4rem;
+            text-align: center;
+        }
+        header h1 { margin: 0; color: #f8c75c; font-size: 1.9em; letter-spacing: -0.3px; }
+        header p { margin: 0.65rem auto 0; max-width: 880px; color: #d7e6f5; line-height: 1.65; font-size: 1.02em; }
+        .back-link {
+            display: inline-block;
+            margin: 1.2rem 0 0 1.2rem;
+            background: rgba(14,79,130,0.1);
+            color: #0b2e4f;
+            text-decoration: none;
+            border-radius: 999px;
+            border: 1px solid rgba(14,79,130,0.3);
+            padding: 0.42em 0.95em;
+            font-size: 0.88em;
+            font-weight: 700;
+        }
+        .wrap { max-width: 1020px; margin: 1.2rem auto 2.4rem; padding: 0 1.2rem; }
+        .panel {
+            background: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 4px 16px rgba(11, 46, 79, 0.08);
+            border-top: 5px solid #0e4f82;
+            padding: 1.25rem 1.35rem;
+            margin-bottom: 1rem;
+        }
+        .panel h2 { margin: 0 0 0.6rem; font-size: 1.16em; color: #0b2e4f; }
+        .panel h3 { margin: 0.9rem 0 0.4rem; font-size: 1em; color: #0e4f82; }
+        .panel p, .panel li { color: #3a4a5c; line-height: 1.7; font-size: 0.96em; }
+        .panel ul, .panel ol { margin: 0.4rem 0 0.6rem 1.2rem; padding: 0; }
+        .panel li { margin-bottom: 0.35em; }
+        code { font-family: Consolas, 'Courier New', monospace; }
+        .inline-code {
+            background: #eaf2fb; border: 1px solid #c9dbee; border-radius: 0.3em;
+            padding: 0.12em 0.45em; font-size: 0.9em; font-family: Consolas, 'Courier New', monospace;
+        }
+        .note {
+            margin-top: 0.7rem; background: #fff8e8; border-left: 4px solid #f2a900;
+            border-radius: 0.5rem; padding: 0.62rem 0.8rem; font-size: 0.9em; line-height: 1.6;
+        }
+        .warn {
+            margin-top: 0.7rem; background: #fef2f2; border-left: 4px solid #dc2626;
+            border-radius: 0.5rem; padding: 0.62rem 0.8rem; font-size: 0.9em; line-height: 1.6;
+        }
+        .draft {
+            margin-top: 0.7rem; background: #eef2ff; border-left: 4px solid #6366f1;
+            border-radius: 0.5rem; padding: 0.62rem 0.8rem; font-size: 0.9em; line-height: 1.6;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88em; margin-top: 0.5rem; }
+        th, td { border: 1px solid #d8e6f2; padding: 0.5em 0.65em; text-align: left; vertical-align: top; }
+        th { background: #eaf2fb; font-weight: 700; color: #0b2e4f; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { color: #3a4a5c; }
+        .step { display: flex; gap: 0.8rem; align-items: flex-start; margin-bottom: 0.7rem; }
+        .step-num {
+            flex-shrink: 0; width: 1.7rem; height: 1.7rem; background: #0e4f82; color: #fff;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 0.82em;
+        }
+        .step-content { flex: 1; }
+        .step-content strong { color: #0b2e4f; }
+        .footer { text-align: center; color: #7c8a99; margin: 2rem 0 1rem 0; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Unreported Potential Measles Cases</h1>
+    <p>One way SHIN-NY might help: scan TRN, ADT, CCD, and lab data for hints of possible measles that were
+       never reported as a reportable condition — surfacing candidates for public-health follow-up, not diagnoses.</p>
+</header>
+
+<a class="back-link" href="../measles-response-overview.html">&#8592; Back to Measles Response Overview</a>
+
+<div class="wrap">
+
+    <div class="panel">
+        <div class="draft">
+            <strong>Status: early idea, framework only.</strong> This sketches the question and a first-pass
+            approach so a developer can pick it up. The signal definitions below are starting points, meant to
+            be refined as we see what the data actually holds.
+        </div>
+    </div>
+
+    <!-- Question -->
+    <section class="panel">
+        <h2>The Question</h2>
+        <p>
+            New York mandates reporting of measles, so <strong>confirmed, reported cases are already handled</strong>
+            — those are not what we're looking for. We're interested in the opposite: patients whose data carries a
+            <strong>hint</strong> of possible measles that was <em>never</em> reported as the reportable condition,
+            and that <em>might</em> someday turn out to be measles.
+        </p>
+        <p>
+            The idea is to combine signals across <strong>all four data types</strong> — TRN, ADT, CCD, and lab
+            results (ORU) — to surface candidates for public-health review. No single source is complete, and the
+            interesting cases are the ones that slip through precisely because they don't look obvious in any one feed.
+        </p>
+        <div class="warn">
+            <strong>This is not a diagnosis.</strong> The output is a candidate list for public-health follow-up.
+            Whether any candidate is actually measles is for clinicians and the health department to determine.
+        </div>
+    </section>
+
+    <!-- What SHIN-NY actually sees -->
+    <section class="panel">
+        <h2>Why This Is a SHIN-NY-Shaped Problem — Scoped Realistically</h2>
+        <p>
+            PDR centralizes CCDs from <strong>over 2,000 contributing sources</strong> — roughly
+            <strong>200 hospitals</strong> and <strong>1,000 lab sources</strong>, plus thousands of
+            non-hospital practices (primary care, pediatrics, urgent care, and more) that no single hospital
+            or lab system ever sees on its own.
+        </p>
+        <p>
+            <strong>We don't have everyone's data, and we won't catch every potential case.</strong> This is
+            not a comprehensive surveillance system, and it should never be described as one. The claim is
+            more modest: because we see across thousands of non-hospital sources that individually have no
+            visibility into each other, we think we can surface a <strong>non-zero number of candidates
+            earlier</strong> than they would otherwise be found — potentially before a positive diagnosis is
+            reached anywhere in the system.
+        </p>
+        <div class="note">
+            <strong>The value proposition in one sentence:</strong> not "we will catch every measles case,"
+            but "we can catch some cases earlier than anyone else currently can, because of where we sit in
+            the data." That's the claim this exploration needs to prove or disprove.
+        </div>
+    </section>
+
+    <!-- Sample report -->
+    <section class="panel">
+        <h2>See It In Action: Sample Candidate Report</h2>
+        <p>
+            To make this concrete, here is what the output looks like end-to-end using fictitious data: a
+            candidate dashboard listing flagged patients, and an epidemiologic summary report of the kind an
+            epidemiologist would actually want to review — an epi curve, a line list, and geographic/age/signal
+            breakdowns.
+        </p>
+        <ul>
+            <li><a href="measles-candidate-dashboard.html"><strong>Candidate Dashboard</strong></a> — the
+                patient-level list: name, DOB, most recent encounter location, primary signals, and concern
+                level, each linking to a full case letter.</li>
+            <li><a href="measles-epi-report.html"><strong>Epidemiologic Summary Report</strong></a> — the
+                population-level view: epi curve, line list, geographic and age distribution, and a breakdown
+                of which data types contributed which signals.</li>
+        </ul>
+        <div class="note">
+            All data in both reports is fictitious, built to show the shape of the deliverable — not real
+            patients, and not a real finding.
+        </div>
+    </section>
+
+    <!-- The basic loop -->
+    <section class="panel">
+        <h2>The Basic Explore Loop</h2>
+        <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-content"><strong>Decide on a sample methodology.</strong> For this exploration the
+                answer is straightforward: scan <strong>all sources, statewide</strong>, but only a
+                <strong>recent window</strong> — the last few days. PDR holds years of history, but there's no
+                value in looking back over it here: we're trying to catch cases that haven't been reported yet,
+                and an old unreported hint is either long since resolved or long since stale. Breadth across
+                sources matters far more than depth across time.</div>
+        </div>
+        <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-content"><strong>Decide what to look for.</strong> Define a "potential measles" hint
+                in each data type — the codes, lab orders, and encounter patterns that count.</div>
+        </div>
+        <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-content"><strong>Validate the signals against known, reported cases.</strong> Before
+                trusting a signal definition on unreported data, run it against patients who <em>were</em>
+                confirmed and reported as measles. If the signals don't reliably light up on cases we already
+                know were measles, the definitions aren't ready to be trusted on cases we don't know about yet.
+                This known-case population is the best training and tuning signal available for this problem.</div>
+        </div>
+        <div class="step">
+            <div class="step-num">4</div>
+            <div class="step-content"><strong>See what we find.</strong> Run the validated signals against the
+                recent, unreported population, remove anything already reported, and review the remaining
+                candidates.</div>
+        </div>
+        <div class="note">
+            Loop steps 2 through 4 — tightening the signal definitions and re-validating against known cases —
+            until the candidate list feels trustworthy (few obvious false positives, no obvious misses).
+        </div>
+        <div class="warn">
+            <strong>AI helps design it; deterministic code runs it.</strong> AI may be used to help explore the
+            data and propose or tune signal definitions during steps 2–3. What actually runs against patient
+            data is <strong>deterministic, rule-based code</strong> — not a model making live judgment calls.
+            That code goes through the normal software lifecycle like anything else: human review, a code
+            security scan, and a full release process, before it ever touches real data.
+        </div>
+    </section>
+
+    <!-- What a hint looks like -->
+    <section class="panel">
+        <h2>What a "Potential Measles" Hint Might Look Like (First Pass)</h2>
+        <p>Starting points per data type, not a finished code set. Expect to add, remove, and reweight.</p>
+        <table>
+            <thead>
+                <tr><th>Data Type</th><th>Where to Look</th><th>Example Signals</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Lab results (ORU)</strong></td>
+                    <td>Result observations (OBX)</td>
+                    <td>Measles IgM / IgG serology, measles PCR / RNA orders or results; rubeola testing</td>
+                </tr>
+                <tr>
+                    <td><strong>CCD — Problems / Encounters</strong></td>
+                    <td>Problem list, encounter diagnoses</td>
+                    <td>Measles ICD-10 (<code class="inline-code">B05.x</code>); SNOMED measles findings;
+                        febrile rash illness, "rule out measles," viral exanthem</td>
+                </tr>
+                <tr>
+                    <td><strong>ADT</strong></td>
+                    <td>Admit/visit reason, diagnosis segments</td>
+                    <td>ED or inpatient visits for fever + rash; isolation/airborne-precaution flags;
+                        pediatric febrile rash presentations</td>
+                </tr>
+                <tr>
+                    <td><strong>TRN</strong></td>
+                    <td>Discharge summaries / transition notes</td>
+                    <td>Narrative mentions of measles, rubeola, Koplik spots, maculopapular rash with fever and
+                        coryza/conjunctivitis</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="note">
+            <strong>Clinical shorthand to consider:</strong> classic measles is fever plus the "three C's" —
+            cough, coryza, conjunctivitis — followed by a maculopapular rash, sometimes with Koplik spots. A
+            combination of these across sources is a stronger hint than any single code.
+        </div>
+    </section>
+
+    <!-- Exclude reported -->
+    <section class="panel">
+        <h2>Excluding Already-Reported Cases (Future Feature)</h2>
+        <p>
+            Because measles is reportable, a confirmed case already flows to public health through the mandated
+            channel. Ideally, those cases should never show up on this candidate list at all — surfacing a case
+            the team already knows about just adds noise and erodes trust in the tool.
+        </p>
+        <p>
+            For the initial version, there is <strong>no automated exclusion</strong>. Candidates are surfaced
+            purely on signal strength, and a reviewer may see cases that are already known and being handled.
+        </p>
+        <div class="note">
+            <strong>Future feature idea:</strong> have the state's reportable-condition systems — both the
+            <strong>upstate</strong> and <strong>downstate (NYC)</strong> systems — periodically send SHIN-NY a
+            list of already-reported measles cases. We match that list against our candidates and remove any
+            match before the list reaches a reviewer. This keeps the team from being overwhelmed by cases
+            that are already being worked, without requiring us to solve report-matching logic on our own.
+        </div>
+        <p>
+            This is deliberately a <strong>phase-2 idea</strong>, not a blocker for a first version. A first
+            version can ship, prove the candidate signals are useful, and add this exclusion feed once there's
+            a reviewer workflow worth protecting from noise.
+        </p>
+    </section>
+
+    <!-- Open questions -->
+    <section class="panel">
+        <h2>Open Questions (Help Wanted)</h2>
+        <ul>
+            <li><strong>Legal basis:</strong> the health department has clear statutory authority over
+                <em>reported</em> measles cases. Does that authority extend to <em>likely</em> or
+                <em>candidate</em> cases that have not been reported or confirmed? This determines what the
+                department can lawfully receive, and what SHIN-NY can lawfully send, before any real data moves —
+                it needs legal and Privacy & Security review, not an assumption.</li>
+            <li>Exactly how many recent days is the right window — and does that need to flex during an active outbreak vs. steady-state monitoring?</li>
+            <li>Which measles LOINC / SNOMED / ICD-10 codes actually appear in our feeds versus the ones we assume?</li>
+            <li>How do we combine weak signals across TRN, ADT, CCD, and lab into a single candidate score?</li>
+            <li>How many known/reported cases are available to validate against, and is that enough to trust the signal definitions?</li>
+            <li>What's an acceptable false-positive rate for a candidate list meant for public-health follow-up, given that already-reported cases won't be filtered out in v1?</li>
+            <li>Who would own the relationship with upstate/downstate reportable-condition systems to make the future exclusion feed possible?</li>
+            <li>Who receives the candidate list, and in what form, so it's actionable without over-alerting?</li>
+        </ul>
+        <div class="note">
+            The goal of this document is to facilitate a rich dialogue, not to present a firm, fixed idea.
+            We've found that starting from something concrete — even an early, imperfect sketch — fosters a
+            better conversation than starting from a blank sheet.
+        </div>
+    </section>
+
+</div>
+
+<div class="footer">
+    &copy; 2026 Medallion Architecture — Data Processing Demo
+</div>
+
+</body>
+</html>
