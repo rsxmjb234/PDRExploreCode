@@ -76,6 +76,17 @@ Two SQL files, one per in-scope data type, each modeled on the existing patterns
 queries intentionally do NOT sample years of history. Default window and per-source cap are both named
 constants at the top of each SQL file so they're easy to find and adjust without re-deriving the query.
 
+**Window anchor — most recent inventory, not wall-clock `current_timestamp` (explicit user instruction):**
+both SQL files first compute `MAX(last_modified_date)` from the inventory table as an anchor, then look
+back `RECENT_WINDOW_DAYS` (10, for this POC) **from that anchor**, not from wall-clock now. Rationale: if
+the inventory table lags behind real time by even a day, `current_timestamp - interval '10' day` silently
+scans a window that doesn't line up with the actual most-recent data present — defeating the entire point
+of a recency-first SQL for an exploration where "time matters." Both files originally used
+`current_timestamp` directly; this was corrected per direct instruction mid-build. The anchor subquery
+costs one extra scan of the production buckets' `last_modified_date` column — acceptable for this POC's
+data volume (same kind of relative-date tradeoff TRNMessageMix's SQL already flagged and proceeded with); a
+future revision could swap to a partition-pruned `MAX(dt)` anchor if this becomes a real cost concern.
+
 **Open item (GUIDANCE.md Section 7, Q1):** statewide vs. regionally focused is explicitly left open. v1
 ships statewide (matches the explore write-up's step-1 answer in `measles-candidate-detection.html`); a
 future revision could add a county/region filter if outbreak activity concentrates geographically.
